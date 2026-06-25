@@ -58,9 +58,7 @@ function setsFromTemplate(pe: ProgramExercise): SetTargets[] {
     targetRirMax: pe.targetRirMax,
     targetRestSeconds: pe.targetRestSeconds,
     targetDurationSeconds: pe.targetDurationSeconds,
-    // Le tempo du template (entier) ne correspond pas au format "3-1-1-0" des
-    // objectifs méso → laissé vide, l'utilisateur le renseigne au besoin.
-    tempo: null,
+    tempo: pe.tempo,
   }));
 }
 

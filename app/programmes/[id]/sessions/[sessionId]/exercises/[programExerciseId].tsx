@@ -165,6 +165,9 @@ export default function ProgramExerciceDetailScreen() {
     if (mnW != null && mxW != null && mnW > mxW)
       errors.push(`Poids : min (${mnW}) > max (${mxW}).`);
     chkInt(rirMin, rirMax, 'RIR');
+    const t = tempo.trim();
+    if (t && !/^\d+-\d+-\d+-\d+$/.test(t))
+      errors.push('Tempo invalide. Format : n-n-n-n (ex : 3-1-1-0).');
     if (errors.length > 0) {
       Alert.alert('Vérification', errors.join('\n\n'));
       return;
@@ -185,7 +188,7 @@ export default function ProgramExerciceDetailScreen() {
         targetRirMax: toInt(rirMax),
         targetRestSeconds: toInt(restSeconds),
         targetDurationSeconds: toInt(durationSeconds),
-        tempo: toInt(tempo),
+        tempo: t || null,
       })
       .where(eq(programExercises.id, programExerciseId!));
 
@@ -432,8 +435,7 @@ export default function ProgramExerciceDetailScreen() {
                 { label: 'RIR max', value: rirMax, onChange: setRirMax },
                 { label: 'Repos (sec)', value: restSeconds, onChange: setRestSeconds },
                 { label: 'Durée (sec)', value: durationSeconds, onChange: setDurationSeconds },
-                { label: 'Tempo', value: tempo, onChange: setTempo },
-              ].map(({ label, value, onChange, decimal }) => (
+                      ].map(({ label, value, onChange, decimal }) => (
                 <View key={label} style={styles.inputRow}>
                   <Text style={styles.inputLabel}>{label}</Text>
                   <TextInput
@@ -446,6 +448,17 @@ export default function ProgramExerciceDetailScreen() {
                   />
                 </View>
               ))}
+              <View style={styles.inputRow}>
+                <Text style={styles.inputLabel}>Tempo</Text>
+                <TextInput
+                  style={styles.targetInput}
+                  value={tempo}
+                  onChangeText={setTempo}
+                  keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                  placeholder="3-1-1-0"
+                  placeholderTextColor="#ccc"
+                />
+              </View>
             </View>
           )}
         </View>

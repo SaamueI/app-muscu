@@ -83,7 +83,8 @@ export const programExercises = sqliteTable('program_exercises', {
   targetRirMax: integer('target_rir_max'),
   targetRestSeconds: integer('target_rest_seconds'),
   targetDurationSeconds: integer('target_duration_seconds'),
-  tempo: integer('tempo'),
+  // Tempo au format "excentrique-pauseBasse-concentrique-pauseHaute", ex "3-1-1-0".
+  tempo: text('tempo'),
   selectedVariation: text('selected_variation'),
 });
 
