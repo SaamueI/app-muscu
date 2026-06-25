@@ -1,0 +1,1 @@
+ALTER TABLE `exercises` ADD `custom_image_uris` text;

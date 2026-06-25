@@ -1,41 +1,57 @@
-import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { useFonts } from 'expo-font';
+import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { db } from '../src/db';
+import migrations from '../src/db/migrations/migrations';
+import { seedExercises } from '../src/db/seed';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+  const { success: migrationsSuccess, error: migrationsError } = useMigrations(
+    db,
+    migrations
+  );
+
+  const [seeded, setSeeded] = useState(false);
 
   useEffect(() => {
-    if (loaded) {
+    if (fontError) throw fontError;
+  }, [fontError]);
+
+  useEffect(() => {
+    if (migrationsError) throw migrationsError;
+  }, [migrationsError]);
+
+  useEffect(() => {
+    if (!migrationsSuccess) return;
+    seedExercises()
+      .then(() => setSeeded(true))
+      .catch((e) => { throw e; });
+  }, [migrationsSuccess]);
+
+  useEffect(() => {
+    if (fontsLoaded && seeded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [fontsLoaded, seeded]);
 
-  if (!loaded) {
+  if (!fontsLoaded || !seeded) {
     return null;
   }
 
@@ -50,6 +66,29 @@ function RootLayoutNav() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="exercices/[id]" options={{ title: 'Exercice' }} />
+        <Stack.Screen name="exercices/nouveau" options={{ title: 'Nouvel exercice' }} />
+        <Stack.Screen name="programmes/nouveau" options={{ title: 'Nouveau programme' }} />
+        <Stack.Screen name="programmes/[id]" options={{ title: 'Programme' }} />
+        <Stack.Screen name="programmes/[id]/modifier" options={{ title: 'Modifier le programme' }} />
+        <Stack.Screen name="programmes/[id]/sessions/[sessionId]" options={{ title: 'Séance' }} />
+        <Stack.Screen name="programmes/[id]/sessions/[sessionId]/modifier" options={{ title: 'Modifier la séance' }} />
+        <Stack.Screen name="programmes/[id]/sessions/[sessionId]/ajouter-exercice" options={{ title: 'Ajouter un exercice', presentation: 'modal' }} />
+        <Stack.Screen name="programmes/[id]/sessions/[sessionId]/ajouter-exercice/[exerciceId]" options={{ title: 'Aperçu' }} />
+        <Stack.Screen name="programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId]" options={{ title: 'Exercice du programme' }} />
+        <Stack.Screen name="programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId]/ajouter-alternative" options={{ title: 'Exercice alternatif' }} />
+        <Stack.Screen name="calendrier/[date]" options={{ title: '' }} />
+        <Stack.Screen name="calendrier/event/nouveau" options={{ title: 'Nouvel événement' }} />
+        <Stack.Screen name="calendrier/event/[eventId]/modifier" options={{ title: 'Modifier' }} />
+        <Stack.Screen name="mesocycles/nouveau" options={{ title: 'Nouveau mésocycle' }} />
+        <Stack.Screen name="mesocycles/[id]" options={{ title: 'Mésocycle' }} />
+        <Stack.Screen name="mesocycles/[id]/modifier" options={{ title: 'Modifier le mésocycle' }} />
+        <Stack.Screen name="mesocycles/[id]/sessions" options={{ title: 'Séances du mésocycle' }} />
+        <Stack.Screen name="mesocycles/[id]/sessions/ajouter" options={{ title: 'Ajouter une séance', presentation: 'modal' }} />
+        <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]" options={{ title: 'Séance' }} />
+        <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]/modifier" options={{ title: 'Modifier la séance' }} />
+        <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]/ajouter-exercice" options={{ title: 'Ajouter un exercice', presentation: 'modal' }} />
+        <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]/exercises/[mesoExerciseId]" options={{ title: 'Exercice' }} />
       </Stack>
     </ThemeProvider>
   );
