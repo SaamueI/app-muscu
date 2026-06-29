@@ -176,6 +176,7 @@ export default function ModifierExerciceScreen() {
         equipment: values.equipment || null,
         category: values.category || null,
         notes: values.notes || null,
+        weightUnit: values.weightUnit ?? null,
         variations: values.variations.length > 0 ? values.variations : null,
         customImageUris: values.customImageUris.length > 0 ? values.customImageUris : null,
       })
@@ -203,6 +204,7 @@ export default function ModifierExerciceScreen() {
         secondaryMuscles: (exercise.secondaryMuscles as string[] | null) ?? [],
         description: exercise.description ?? '',
         measurementType: exercise.measurementType,
+        weightUnit: (exercise.weightUnit as 'kg' | 'lb' | null) ?? null,
         equipment: exercise.equipment ?? '',
         category: exercise.category ?? '',
         notes: exercise.notes ?? '',

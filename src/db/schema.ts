@@ -17,6 +17,7 @@ export const exercises = sqliteTable('exercises', {
     .default('reps'),
   isCustom: integer('is_custom', { mode: 'boolean' }).notNull().default(false),
   notes: text('notes'),
+  weightUnit: text('weight_unit'),
   // Fields from the exercise dataset
   equipment: text('equipment'),
   category: text('category'),
@@ -86,6 +87,7 @@ export const programExercises = sqliteTable('program_exercises', {
   // Tempo au format "excentrique-pauseBasse-concentrique-pauseHaute", ex "3-1-1-0".
   tempo: text('tempo'),
   selectedVariation: text('selected_variation'),
+  supersetGroupId: text('superset_group_id'),
 });
 
 // ─── CalendarEvent ────────────────────────────────────────────────────────────
@@ -113,6 +115,7 @@ export const workoutSessions = sqliteTable('workout_sessions', {
   programSessionId: text('program_session_id').references(
     () => programSessions.id
   ),
+  mesoSessionId: text('meso_session_id').references(() => mesoSessions.id),
   date: text('date').notNull(),
   startedAt: text('started_at'),
   finishedAt: text('finished_at'),
@@ -131,6 +134,9 @@ export const exerciseLogs = sqliteTable('exercise_logs', {
   programExerciseId: text('program_exercise_id').references(
     () => programExercises.id
   ),
+  mesoExerciseId: text('meso_exercise_id').references(() => mesoExercises.id),
+  supersetGroupId: text('superset_group_id'),
+  isDone: integer('is_done', { mode: 'boolean' }).notNull().default(false),
   order: integer('order').notNull(),
   time: text('time').notNull(),
   note: text('note'),
@@ -150,6 +156,9 @@ export const setLogs = sqliteTable('set_logs', {
   restSeconds: integer('rest_seconds'),
   partialReps: integer('partial_reps'),
   rir: integer('rir'),
+  executionSeconds: integer('execution_seconds'),
+  setNumber: integer('set_number'),
+  side: text('side'),
 });
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────
@@ -216,6 +225,7 @@ export const mesoExercises = sqliteTable('meso_exercises', {
   }).$type<string[]>(),
   order: integer('order').notNull(),
   selectedVariation: text('selected_variation'),
+  supersetGroupId: text('superset_group_id'),
 });
 
 // ─── MesoSet (objectifs par série) ────────────────────────────────────────────
@@ -250,6 +260,21 @@ export const targetMemory = sqliteTable('target_memory', {
     .$type<Record<string, MemorizedSet[]>>()
     .notNull(),
   updatedAt: text('updated_at'),
+});
+
+// ─── RestPresets ──────────────────────────────────────────────────────────────
+
+export const restPresets = sqliteTable('rest_presets', {
+  id: text('id').primaryKey(),
+  seconds: integer('seconds').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+});
+
+// ─── UserSettings ─────────────────────────────────────────────────────────────
+
+export const userSettings = sqliteTable('user_settings', {
+  id: text('id').primaryKey().default('singleton'),
+  weightUnit: text('weight_unit').notNull().default('kg'),
 });
 
 export type MemorizedSet = {

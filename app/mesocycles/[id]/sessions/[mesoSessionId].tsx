@@ -5,6 +5,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '../../../../src/db';
 import { exercises, mesoExercises, mesoSessions, mesoSets } from '../../../../src/db/schema';
+import { startWorkoutSession } from '../../../../src/db/session';
+import { generateId } from '../../../../src/utils/generateId';
 
 type MesoSession = typeof mesoSessions.$inferSelect;
 type Exercise = typeof exercises.$inferSelect;
@@ -24,6 +26,29 @@ export default function MesoSessionDetailScreen() {
   const [session, setSession] = useState<MesoSession | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [editMode, setEditMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (meId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(meId)) next.delete(meId); else next.add(meId);
+      return next;
+    });
+  };
+
+  const handleSuperset = async () => {
+    const ids = [...selectedIds];
+    if (ids.length < 2) return;
+    const allSameGroup = rows
+      .filter((r) => ids.includes(r.me.id))
+      .every((r) => r.me.supersetGroupId && r.me.supersetGroupId === rows.find((x) => x.me.id === ids[0])?.me.supersetGroupId);
+    const groupId = allSameGroup ? null : generateId();
+    for (const meId of ids) {
+      await db.update(mesoExercises).set({ supersetGroupId: groupId }).where(eq(mesoExercises.id, meId));
+    }
+    setSelectedIds(new Set());
+    load();
+  };
 
   const load = useCallback(async () => {
     if (!mesoSessionId) return;
@@ -69,6 +94,16 @@ export default function MesoSessionDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Pressable
+        style={styles.startBtn}
+        onPress={async () => {
+          const sid = await startWorkoutSession({ mesoSessionId: mesoSessionId! });
+          router.push(`/seance/${sid}` as any);
+        }}
+      >
+        <Text style={styles.startBtnText}>▶ Commencer cette séance</Text>
+      </Pressable>
+
       <View style={styles.header}>
         <Pressable
           style={styles.editIcon}
@@ -93,47 +128,69 @@ export default function MesoSessionDetailScreen() {
           </Pressable>
         </View>
 
+        {!editMode && selectedIds.size > 0 && (
+          <View style={styles.supersetBar}>
+            <Text style={styles.supersetBarText}>{selectedIds.size} sélectionné(s)</Text>
+            <Pressable style={styles.supersetBarBtn} onPress={handleSuperset}>
+              <Text style={styles.supersetBarBtnText}>
+                {rows.filter((r) => selectedIds.has(r.me.id)).every((r) => r.me.supersetGroupId)
+                  ? 'Dissoudre'
+                  : 'Superset'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setSelectedIds(new Set())}>
+              <Text style={styles.supersetBarCancel}>Annuler</Text>
+            </Pressable>
+          </View>
+        )}
+
         {rows.length === 0 ? (
           <Text style={styles.empty}>Aucun exercice.</Text>
         ) : (
-          rows.map((r, i) => (
-            <View key={r.me.id} style={styles.exoRow}>
-              {editMode && (
-                <View style={styles.moveCol}>
-                  <Pressable hitSlop={6} onPress={() => move(i, -1)} disabled={i === 0}>
-                    <Text style={[styles.moveBtn, i === 0 && styles.moveDisabled]}>▲</Text>
-                  </Pressable>
-                  <Pressable hitSlop={6} onPress={() => move(i, 1)} disabled={i === rows.length - 1}>
-                    <Text style={[styles.moveBtn, i === rows.length - 1 && styles.moveDisabled]}>▼</Text>
-                  </Pressable>
-                </View>
-              )}
-              <Pressable
-                style={styles.exoTap}
-                onPress={() =>
-                  router.push(
-                    `/mesocycles/${id}/sessions/${mesoSessionId}/exercises/${r.me.id}${editMode ? '?edit=1' : ''}`
-                  )
-                }
-              >
-                <View style={styles.exoInfo}>
-                  <Text style={styles.exoName}>{r.exercise.name}</Text>
-                  {r.me.selectedVariation ? (
-                    <Text style={styles.exoVariant}>{r.me.selectedVariation}</Text>
-                  ) : null}
-                  <Text style={styles.exoSets}>
-                    {r.setCount > 0 ? `${r.setCount} série${r.setCount > 1 ? 's' : ''}` : 'Aucun objectif'}
-                  </Text>
-                </View>
-                {!editMode && <Text style={styles.chevron}>›</Text>}
-              </Pressable>
-              {editMode && (
-                <Pressable hitSlop={8} onPress={() => removeExo(r.me.id)}>
-                  <Text style={styles.removeBtn}>✕</Text>
+          rows.map((r, i) => {
+            const isSelected = selectedIds.has(r.me.id);
+            const inSuperset = !!r.me.supersetGroupId;
+            return (
+              <View key={r.me.id} style={[styles.exoRow, isSelected && styles.exoRowSelected]}>
+                {editMode && (
+                  <View style={styles.moveCol}>
+                    <Pressable hitSlop={6} onPress={() => move(i, -1)} disabled={i === 0}>
+                      <Text style={[styles.moveBtn, i === 0 && styles.moveDisabled]}>▲</Text>
+                    </Pressable>
+                    <Pressable hitSlop={6} onPress={() => move(i, 1)} disabled={i === rows.length - 1}>
+                      <Text style={[styles.moveBtn, i === rows.length - 1 && styles.moveDisabled]}>▼</Text>
+                    </Pressable>
+                  </View>
+                )}
+                <Pressable
+                  style={styles.exoTap}
+                  onPress={() =>
+                    !editMode && selectedIds.size > 0
+                      ? toggleSelect(r.me.id)
+                      : router.push(`/mesocycles/${id}/sessions/${mesoSessionId}/exercises/${r.me.id}${editMode ? '?edit=1' : ''}`)
+                  }
+                  onLongPress={() => !editMode && toggleSelect(r.me.id)}
+                >
+                  <View style={styles.exoInfo}>
+                    <Text style={styles.exoName}>{r.exercise.name}</Text>
+                    {r.me.selectedVariation ? (
+                      <Text style={styles.exoVariant}>{r.me.selectedVariation}</Text>
+                    ) : null}
+                    {inSuperset && <Text style={styles.supersetTag}>SUPERSET</Text>}
+                    <Text style={styles.exoSets}>
+                      {r.setCount > 0 ? `${r.setCount} série${r.setCount > 1 ? 's' : ''}` : 'Aucun objectif'}
+                    </Text>
+                  </View>
+                  {!editMode && <Text style={styles.chevron}>{isSelected ? '✓' : '›'}</Text>}
                 </Pressable>
-              )}
-            </View>
-          ))
+                {editMode && (
+                  <Pressable hitSlop={8} onPress={() => removeExo(r.me.id)}>
+                    <Text style={styles.removeBtn}>✕</Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })
         )}
 
         {editMode && (
@@ -199,4 +256,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f7ff', borderWidth: 1, borderColor: '#c8e0ff', borderStyle: 'dashed',
   },
   addBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 14 },
+
+  startBtn: {
+    backgroundColor: '#34C759',
+    marginHorizontal: 12,
+    marginTop: 16,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  startBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+
+  exoRowSelected: { backgroundColor: '#EBF3FF' },
+  supersetTag: { fontSize: 10, fontWeight: '700', color: '#FF9500', letterSpacing: 0.5 },
+  supersetBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#EBF3FF', borderRadius: 10, padding: 10, marginBottom: 8,
+  },
+  supersetBarText: { flex: 1, fontSize: 14, color: '#007AFF' },
+  supersetBarBtn: { backgroundColor: '#007AFF', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  supersetBarBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13 },
+  supersetBarCancel: { fontSize: 14, color: '#8E8E93' },
 });

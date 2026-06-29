@@ -11,6 +11,7 @@ import m0006 from './0006_mesocycle_layer.sql';
 import m0007 from './0007_target_memory.sql';
 import m0008 from './0008_tempo_text.sql';
 import m0009 from './0009_program_exercises_tempo_text.sql';
+import m0010 from './0010_workout_session_live.sql';
 
   export default {
     journal,
@@ -24,6 +25,7 @@ m0005,
 m0006,
 m0007,
 m0008,
-m0009
+m0009,
+m0010
     }
   }

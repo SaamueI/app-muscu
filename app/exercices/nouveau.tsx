@@ -25,6 +25,7 @@ export default function NouvelExerciceScreen() {
       equipment: values.equipment || null,
       category: values.category || null,
       notes: values.notes || null,
+      weightUnit: values.weightUnit ?? null,
       variations: values.variations.length > 0 ? values.variations : null,
       customImageUris: values.customImageUris.length > 0 ? values.customImageUris : null,
       isCustom: true,

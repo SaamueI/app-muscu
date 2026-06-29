@@ -8,7 +8,7 @@ Application mobile React Native / Expo de suivi d'entraînement.
 
 | Outil | Version |
 |---|---|
-| Expo SDK | ~54.0.0 |
+| Expo SDK | ~56.0.0 |
 | React Native | 0.81.5 |
 | expo-router | ~6.0.24 |
 | expo-sqlite | ~16.0.10 |
@@ -28,22 +28,33 @@ app/
   programmes/          # CRUD programmes → sessions → exercices
   calendrier/          # Vue mensuelle + création/édition d'événements
   mesocycles/          # CRUD mésocycles → semaines → séances → exercices → séries
+  seance/
+    [sessionId].tsx    # Séance live : liste À faire / Faits, toggle isDone
+    exercice/
+      [logId].tsx      # Écran exercice : objectifs, timer, sets, historique
+    presets-repos.tsx  # CRUD rest_presets (modal)
 
 src/
   db/
     index.ts           # Ouverture DB + PRAGMA foreign_keys = ON
     schema.ts          # Tables Drizzle (source de vérité)
     meso.ts            # Helpers mésocycle (copy, duplicate, memory…)
+    session.ts         # Helpers séance live (start, saveSetLog, finishSession…)
     migrations/
       meta/_journal.json   # Journal Drizzle — timestamps DOIVENT être croissants
-      migrations.js        # Import de toutes les migrations m0000–m0008
-      0000_…sql … 0008_…sql
+      migrations.js        # Import de toutes les migrations m0000–m0010
+      0000_…sql … 0010_…sql
   components/
     ExercisePicker.tsx
+    TimerDisplay.tsx        # Composant timer (chrono / compte à rebours)
+    RestPresetPicker.tsx    # Chips preset temps de repos
+    SetPerformanceModal.tsx # Modal saisie performance (poids, reps, RIR…)
   utils/
     generateId.ts
     altPickerStore.ts      # Store module-level pour passer un exo entre écrans
     mesoDeletePref.ts      # Flag "ne plus demander" suppression de séance
+    activeSessionStore.ts  # Store éphémère timer en cours de séance
+    weightUtils.ts         # kgToLb, lbToKg, formatWeight
 ```
 
 ---
@@ -60,32 +71,37 @@ src/
 
 Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.created_at`. Un `when` trop petit = migration silencieusement ignorée.
 
-**Prochain `when` disponible** : > `1782600000000` (dernière migration : 0009).
+**Prochain `when` disponible** : > `1782700000000` (dernière migration : 0010).
 
 ### Schéma (résumé)
 
 ```
-exercises              — catalogue d'exercices (custom + dataset)
+exercises              — catalogue (custom + dataset) ; weightUnit = 'kg'|'lb'|null
 programs               — programmes d'entraînement
-  └─ program_sessions  — séances d'un programme (template, pas d'objectifs par série)
-       └─ program_exercises — exercices d'une séance template (objectifs agrégés)
+  └─ program_sessions  — séances d'un programme (template)
+       └─ program_exercises — objectifs agrégés ; supersetGroupId
 
 calendar_events        — événements (workout_session / rest / competition / other)
-  └─ workout_sessions  — séance réalisée
-       └─ exercise_logs
-            └─ set_logs
+  └─ workout_sessions  — séance réalisée ; mesoSessionId nullable
+       └─ exercise_logs — isDone, supersetGroupId, mesoExerciseId
+            └─ set_logs — setNumber, side ('L'|'R'|null), executionSeconds
 
 mesocycles             — plan d'entraînement sur N semaines
   └─ meso_sessions     — séance planifiée (week_index, order, title, color, day)
-       └─ meso_exercises
+       └─ meso_exercises — supersetGroupId
             └─ meso_sets   — objectifs PAR SÉRIE (reps, poids, RIR, repos, durée, tempo)
 
 target_memory          — cache des derniers objectifs par program_session_id
+rest_presets           — chips temps de repos prédéfinis (60/90/120/150/180/240 s)
+user_settings          — singleton ; weightUnit = 'kg'|'lb'
 ```
 
 **Points importants :**
 - `programExercises.tempo` et `mesoSets.tempo` → `text` au format `"3-1-1-0"` (excentrique-pauseBasse-concentrique-pauseHaute)
 - `PRAGMA foreign_keys = ON` activé dans `src/db/index.ts` (nécessaire pour les CASCADE)
+- Unités : stockées en kg dans la DB, affichées converties selon `exercises.weightUnit` (ou fallback `user_settings.weightUnit`)
+- Supersets : `supersetGroupId` UUID partagé entre les exercices du même superset (sur `program_exercises`, `meso_exercises`, `exercise_logs`)
+- Unilatéral : deux `set_logs` par set logique, `side = 'L'` et `'R'`, même `setNumber`
 
 ### Migrations appliquées
 
@@ -101,6 +117,22 @@ target_memory          — cache des derniers objectifs par program_session_id
 | 0007 | target_memory | Table target_memory |
 | 0008 | tempo_text | Rebuild meso_sets : tempo integer → text |
 | 0009 | program_exercises_tempo_text | Rebuild program_exercises : tempo integer → text |
+| 0010 | workout_session_live | Colonnes séance live, tables rest_presets + user_settings, supersets, unités |
+
+---
+
+## Timer séance live (activeSessionStore)
+
+Machine d'états : `idle → execution → rest → (modal) → idle`.
+
+Le store (`src/utils/activeSessionStore.ts`) est module-level (pas de Context). Champs clés :
+- `timerPhase` : `'idle' | 'execution' | 'rest'`
+- `timerStartedAt` : `Date.now()` au démarrage de la phase
+- `timerTargetSeconds` : `null` = chrono, `n` = compte à rebours
+- `timerMode` : `'auto'` (démarrage auto au 0) | `'manual'` (continue en négatif)
+- `isUnilateral`, `currentSide` (`'L'|'R'|null`), `currentSetNumber`
+
+`useKeepAwake()` activé sur l'écran session.
 
 ---
 
@@ -138,12 +170,12 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 3 | Calendrier mensuel + événements datés/semaine | ✅ |
 | 4 | Création d'événements avec date picker | ✅ |
 | 5 | Mésocycles (CRUD complet, semaines, objectifs par série, mémoire) | ✅ |
+| 6 | Séance live (timer, log sets, supersets, unités kg/lb, unilatéral) | ✅ |
 
-## Phases restantes (non démarrées)
+## Phases restantes
 
 | Phase | Contenu |
 |---|---|
-| 6 | Séance en cours (mode live : timer, log des sets) |
 | 7 | Onglet Progression (graphiques, records) |
 | 8 | Export / import mésocycle |
 | 9 | Ancrage calendaire des mésocycles |

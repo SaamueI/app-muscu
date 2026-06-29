@@ -89,6 +89,9 @@ function RootLayoutNav() {
         <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]/modifier" options={{ title: 'Modifier la séance' }} />
         <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]/ajouter-exercice" options={{ title: 'Ajouter un exercice', presentation: 'modal' }} />
         <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]/exercises/[mesoExerciseId]" options={{ title: 'Exercice' }} />
+        <Stack.Screen name="seance/[sessionId]" options={{ headerShown: false }} />
+        <Stack.Screen name="seance/exercice/[logId]" options={{ title: 'Exercice' }} />
+        <Stack.Screen name="seance/presets-repos" options={{ title: 'Temps de repos', presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>
   );
