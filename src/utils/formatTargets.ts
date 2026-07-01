@@ -17,7 +17,9 @@ function formatRange(min?: number | null, max?: number | null, unit = ''): strin
   return `${min ?? max}${unit}`;
 }
 
-export function formatTargets(pe: ProgramExerciseTargets): string {
+type FormatOptions = { weightUnit?: 'kg' | 'lb' };
+
+export function formatTargets(pe: ProgramExerciseTargets, options?: FormatOptions): string {
   const parts: string[] = [];
 
   const sets = formatRange(pe.targetSetsMin, pe.targetSetsMax);
@@ -26,7 +28,8 @@ export function formatTargets(pe: ProgramExerciseTargets): string {
   const reps = formatRange(pe.targetRepsMin, pe.targetRepsMax);
   if (reps) parts.push(`${reps} reps`);
 
-  const weight = formatRange(pe.targetWeightMin, pe.targetWeightMax, ' kg');
+  const weightUnit = options?.weightUnit ?? 'kg';
+  const weight = formatRange(pe.targetWeightMin, pe.targetWeightMax, ` ${weightUnit}`);
   if (weight) parts.push(weight);
 
   const rir = formatRange(pe.targetRirMin, pe.targetRirMax);

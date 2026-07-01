@@ -39,6 +39,7 @@ export interface ExerciceFormValues {
   secondaryMuscles: string[];
   description: string;
   measurementType: 'reps' | 'time';
+  weightUnit: 'kg' | 'lb' | null;
   equipment: string;
   category: string;
   notes: string;
@@ -164,6 +165,7 @@ export default function ExerciceForm({ initial, onSubmit, submitLabel }: Props) 
   const [equipment, setEquipment] = useState(initial?.equipment ? [initial.equipment] : [] as string[]);
   const [category, setCategory] = useState(initial?.category ? [initial.category] : [] as string[]);
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lb' | null>(initial?.weightUnit ?? null);
   const [variations, setVariations] = useState<string[]>(initial?.variations ?? []);
   const [newVariation, setNewVariation] = useState('');
   const [customImageUris, setCustomImageUris] = useState<string[]>(initial?.customImageUris ?? []);
@@ -211,6 +213,7 @@ export default function ExerciceForm({ initial, onSubmit, submitLabel }: Props) 
       secondaryMuscles,
       description,
       measurementType,
+      weightUnit,
       equipment: equipment[0] ?? '',
       category: category[0] ?? '',
       notes,
@@ -242,6 +245,26 @@ export default function ExerciceForm({ initial, onSubmit, submitLabel }: Props) 
             onValueChange={(v) => setMeasurementType(v ? 'time' : 'reps')}
           />
           <Text style={measurementType === 'time' ? styles.measureActive : styles.measureInactive}>Durée</Text>
+        </View>
+      </View>
+
+      {/* Unité de poids */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Unité de poids</Text>
+        <View style={styles.row}>
+          {(['Par défaut', 'kg', 'lb'] as const).map((opt) => {
+            const val = opt === 'Par défaut' ? null : opt;
+            const active = weightUnit === val;
+            return (
+              <Pressable
+                key={opt}
+                onPress={() => setWeightUnit(val)}
+                style={[styles.unitChip, active && styles.unitChipActive]}
+              >
+                <Text style={[styles.unitChipText, active && styles.unitChipTextActive]}>{opt}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
@@ -381,6 +404,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   measureActive: { fontSize: 15, fontWeight: '600', color: '#007AFF' },
   measureInactive: { fontSize: 15, color: '#aaa' },
+  unitChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F2F2F7' },
+  unitChipActive: { backgroundColor: '#007AFF' },
+  unitChipText: { fontSize: 14, color: '#1C1C1E', fontWeight: '500' },
+  unitChipTextActive: { color: '#FFFFFF' },
 
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 },
   photoThumb: { width: 80, height: 80, borderRadius: 8, overflow: 'hidden' },

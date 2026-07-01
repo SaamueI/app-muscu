@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useLayoutEffect, useState } from 'react';
 import {
-  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +12,8 @@ import {
 import { db } from '../../../../src/db';
 import { exercises, programExercises, programSessions } from '../../../../src/db/schema';
 import { formatTargets } from '../../../../src/utils/formatTargets';
+import { startWorkoutSession } from '../../../../src/db/session';
+import { generateId } from '../../../../src/utils/generateId';
 
 type Session = typeof programSessions.$inferSelect;
 type ProgramExercise = typeof programExercises.$inferSelect;
@@ -31,6 +32,29 @@ export default function SeanceDetailScreen() {
   const navigation = useNavigation();
   const [session, setSession] = useState<Session | null>(null);
   const [items, setItems] = useState<PEWithExercise[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (peId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(peId)) next.delete(peId); else next.add(peId);
+      return next;
+    });
+  };
+
+  const handleSuperset = async () => {
+    const ids = [...selectedIds];
+    if (ids.length < 2) return;
+    const allSameGroup = items
+      .filter((i) => ids.includes(i.pe.id))
+      .every((i) => i.pe.supersetGroupId && i.pe.supersetGroupId === items.find((x) => x.pe.id === ids[0])?.pe.supersetGroupId);
+    const groupId = allSameGroup ? null : generateId();
+    for (const peId of ids) {
+      await db.update(programExercises).set({ supersetGroupId: groupId }).where(eq(programExercises.id, peId));
+    }
+    setSelectedIds(new Set());
+    load();
+  };
 
   const load = useCallback(async () => {
     if (!sessionId) return;
@@ -75,6 +99,17 @@ export default function SeanceDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Bouton commencer */}
+      <Pressable
+        style={styles.startBtn}
+        onPress={async () => {
+          const sid = await startWorkoutSession({ programSessionId: sessionId! });
+          router.push(`/seance/${sid}` as any);
+        }}
+      >
+        <Text style={styles.startBtnText}>▶ Commencer cette séance</Text>
+      </Pressable>
+
       {/* En-tête séance */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
@@ -90,41 +125,55 @@ export default function SeanceDetailScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Exercices</Text>
 
+        {selectedIds.size > 0 && (
+          <View style={styles.supersetBar}>
+            <Text style={styles.supersetBarText}>{selectedIds.size} sélectionné(s)</Text>
+            <Pressable style={styles.supersetBarBtn} onPress={handleSuperset}>
+              <Text style={styles.supersetBarBtnText}>
+                {items.filter((i) => selectedIds.has(i.pe.id)).every((i) => i.pe.supersetGroupId)
+                  ? 'Dissoudre le superset'
+                  : 'Créer un superset'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => setSelectedIds(new Set())}>
+              <Text style={styles.supersetBarCancel}>Annuler</Text>
+            </Pressable>
+          </View>
+        )}
+
         {items.length === 0 ? (
           <Text style={styles.empty}>Aucun exercice — appuie sur + pour en ajouter.</Text>
         ) : (
-          <FlatList
-            data={items}
-            keyExtractor={(item) => item.pe.id}
-            scrollEnabled={false}
-            renderItem={({ item, index }) => {
-              const summary = targetSummary(item.pe);
-              return (
-                <Pressable
-                  style={styles.exoCard}
-                  onPress={() =>
-                    router.push(
-                      `/programmes/${id}/sessions/${sessionId}/exercises/${item.pe.id}`
-                    )
-                  }
-                >
-                  <View style={styles.exoNumber}>
-                    <Text style={styles.exoNumberText}>{index + 1}</Text>
-                  </View>
-                  <View style={styles.exoInfo}>
-                    <Text style={styles.exoName}>{item.exercise.name}</Text>
-                    {item.pe.selectedVariation ? (
-                      <Text style={styles.exoVariant}>{item.pe.selectedVariation}</Text>
-                    ) : null}
-                    {summary ? (
-                      <Text style={styles.exoTargets}>{summary}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </Pressable>
-              );
-            }}
-          />
+          items.map((item, index) => {
+            const summary = targetSummary(item.pe);
+            const isSelected = selectedIds.has(item.pe.id);
+            const inSuperset = !!item.pe.supersetGroupId;
+            return (
+              <Pressable
+                key={item.pe.id}
+                style={[styles.exoCard, isSelected && styles.exoCardSelected]}
+                onPress={() =>
+                  selectedIds.size > 0
+                    ? toggleSelect(item.pe.id)
+                    : router.push(`/programmes/${id}/sessions/${sessionId}/exercises/${item.pe.id}`)
+                }
+                onLongPress={() => toggleSelect(item.pe.id)}
+              >
+                <View style={[styles.exoNumber, inSuperset && styles.exoNumberSuperset]}>
+                  <Text style={styles.exoNumberText}>{index + 1}</Text>
+                </View>
+                <View style={styles.exoInfo}>
+                  <Text style={styles.exoName}>{item.exercise.name}</Text>
+                  {item.pe.selectedVariation ? (
+                    <Text style={styles.exoVariant}>{item.pe.selectedVariation}</Text>
+                  ) : null}
+                  {inSuperset && <Text style={styles.supersetTag}>SUPERSET</Text>}
+                  {summary ? <Text style={styles.exoTargets}>{summary}</Text> : null}
+                </View>
+                <Text style={styles.chevron}>{isSelected ? '✓' : '›'}</Text>
+              </Pressable>
+            );
+          })
         )}
 
         <Pressable
@@ -207,4 +256,26 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   addBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 14 },
+
+  startBtn: {
+    backgroundColor: '#34C759',
+    marginHorizontal: 12,
+    marginTop: 16,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  startBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+
+  exoCardSelected: { backgroundColor: '#EBF3FF', borderColor: '#007AFF', borderWidth: 1 },
+  exoNumberSuperset: { backgroundColor: '#FF9500' },
+  supersetTag: { fontSize: 10, fontWeight: '700', color: '#FF9500', letterSpacing: 0.5 },
+  supersetBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#EBF3FF', borderRadius: 10, padding: 10, marginBottom: 8,
+  },
+  supersetBarText: { flex: 1, fontSize: 14, color: '#007AFF' },
+  supersetBarBtn: { backgroundColor: '#007AFF', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  supersetBarBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13 },
+  supersetBarCancel: { fontSize: 14, color: '#8E8E93' },
 });

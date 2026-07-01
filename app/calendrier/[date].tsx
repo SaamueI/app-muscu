@@ -12,6 +12,7 @@ import {
 
 import { db } from '../../src/db';
 import { calendarEvents } from '../../src/db/schema';
+import { getExistingSession, startWorkoutSession } from '../../src/db/session';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -55,6 +56,13 @@ export default function JourDetailScreen() {
   }, [date]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const handleStart = async (ev: CalendarEvent) => {
+    setOpenMenu(null);
+    const existing = await getExistingSession(ev.id);
+    const sessionId = existing ?? await startWorkoutSession({ calendarEventId: ev.id });
+    router.push(`/seance/${sessionId}` as any);
+  };
 
   const deleteEvent = (ev: CalendarEvent) => {
     Alert.alert('Supprimer', `Supprimer "${ev.title || 'cet événement'}" ?`, [
@@ -104,6 +112,16 @@ export default function JourDetailScreen() {
                 </Pressable>
                 {openMenu === ev.id && (
                   <View style={styles.actionMenu}>
+                    {ev.type === 'workout_session' && ev.status !== 'completed' && (
+                      <>
+                        <Pressable style={styles.actionItem} onPress={() => handleStart(ev)}>
+                          <Text style={[styles.actionText, styles.actionTextBlue]}>
+                            {ev.status === 'planned' ? 'Commencer la séance' : 'Reprendre la séance'}
+                          </Text>
+                        </Pressable>
+                        <View style={styles.actionDivider} />
+                      </>
+                    )}
                     <Pressable
                       style={styles.actionItem}
                       onPress={() => { setOpenMenu(null); router.push(`/calendrier/event/${ev.id}/modifier`); }}
@@ -177,6 +195,7 @@ const styles = StyleSheet.create({
   actionItem: { paddingVertical: 12, paddingHorizontal: 16 },
   actionText: { fontSize: 15, color: '#111' },
   actionTextRed: { color: '#FF3B30' },
+  actionTextBlue: { color: '#007AFF', fontWeight: '600' },
   actionDivider: { height: 1, backgroundColor: '#f0f0f0' },
 
   footer: {
