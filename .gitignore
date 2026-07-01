@@ -36,6 +36,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# fichiers de test export/import (scripts/test*Export.ts)
+out*.xlsx
+
 # generated native folders
 /ios
 /android

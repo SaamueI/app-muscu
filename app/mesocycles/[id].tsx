@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '../../src/db';
 import { mesocycles, mesoSessions, programs } from '../../src/db/schema';
+import { exportMesocycle } from '../../src/export/actions';
 
 type Mesocycle = typeof mesocycles.$inferSelect;
 type MesoSession = typeof mesoSessions.$inferSelect;
@@ -20,6 +21,14 @@ export default function MesocycleDetailScreen() {
   const [meso, setMeso] = useState<Mesocycle | null>(null);
   const [programName, setProgramName] = useState<string | null>(null);
   const [sessions, setSessions] = useState<MesoSession[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  const onExport = async () => {
+    if (!id || exporting) return;
+    setExporting(true);
+    await exportMesocycle(id);
+    setExporting(false);
+  };
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -100,8 +109,10 @@ export default function MesocycleDetailScreen() {
         })
       )}
 
-      <Pressable style={styles.downloadBtn} disabled>
-        <Text style={styles.downloadBtnText}>Télécharger (à venir)</Text>
+      <Pressable style={styles.exportBtn} onPress={onExport} disabled={exporting}>
+        <Text style={styles.exportBtnText}>
+          {exporting ? 'Export…' : 'Exporter (Excel)'}
+        </Text>
       </Pressable>
     </ScrollView>
   );
@@ -152,10 +163,9 @@ const styles = StyleSheet.create({
   sessionDay: { fontSize: 12, color: '#888' },
   chevron: { fontSize: 18, color: '#ccc' },
 
-  downloadBtn: {
+  exportBtn: {
     marginHorizontal: 12, marginTop: 20, borderRadius: 12, paddingVertical: 13,
-    alignItems: 'center', borderWidth: 1, borderColor: '#d0d0d0', backgroundColor: '#fff',
-    opacity: 0.5,
+    alignItems: 'center', backgroundColor: '#007AFF',
   },
-  downloadBtnText: { color: '#888', fontWeight: '600', fontSize: 14 },
+  exportBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
