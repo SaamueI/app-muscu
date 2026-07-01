@@ -57,6 +57,19 @@ src/
     mesoDeletePref.ts      # Flag "ne plus demander" suppression de séance
     activeSessionStore.ts  # Store éphémère timer en cours de séance
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
+  export/                  # Phase 8 — export/import XLSX (voir section dédiée)
+    core/                  # Sérialisation XLSX pure (testable sous Node)
+      mesoXlsx.ts / programXlsx.ts    # build*/parse* d'un classeur
+      style.ts             # Styles xlsx-js-style + helpers mm:ss
+      transform.ts         # Labels superset ⇄ UUID, matching exos par nom
+      mesoTypes.ts / programTypes.ts  # Formats pivot
+    db/                    # Pont Drizzle ⇄ pivot (mesoDb.ts, programDb.ts)
+    index.ts               # Façade build*File / import*File
+    fileIO.ts              # expo-file-system / document-picker / sharing / SAF
+    actions.ts             # Flux UI (Alert) : export* / pickAndImport*
+
+scripts/
+  testMesoExport.ts / testProgramExport.ts / testTransform.ts  # Tests Node (tsx)
 ```
 
 ---
@@ -138,6 +151,25 @@ Le store (`src/utils/activeSessionStore.ts`) est module-level (pas de Context). 
 
 ---
 
+## Export / import XLSX (phase 8)
+
+Export et import de **mésocycles** et **programmes** en `.xlsx` stylisé (`xlsx-js-style`). Deux formats **distincts et non mélangeables** : l'onglet *Méta* porte `type` = `mesocycle` | `programme`, lu à l'import pour router / refuser un mauvais fichier.
+
+**Couches** (`src/export/`) :
+- `core/` — **pur**, testable sous Node (`npm run test:export:meso` / `test:export:program`). Round-trip sans perte vérifié.
+- `db/` — `loadXForExport` (DB → pivot) et `importX` (pivot → DB : **régénère tous les IDs**, crée un exo custom minimal si le nom est absent, reconstruit les `supersetGroupId` depuis des étiquettes A/B).
+- `fileIO.ts` / `actions.ts` — **nouvelle** API `expo-file-system` (SDK 54 : `import { File, Paths } from 'expo-file-system'`), `expo-sharing`, et `StorageAccessFramework` (`expo-file-system/legacy`) pour « Enregistrer dans un dossier » sur Android.
+
+**Format de fichier** : onglet *Méta* (clé/valeur + légende) + onglet de données. Mésocycle = 1 ligne / série ; programme = 1 ligne / exercice (objectifs agrégés). En-têtes colorés **obligatoire (ambre) / optionnel (ardoise)**, lignes teintées par couleur de séance. **Import lu par nom d'en-tête** (robuste au style) ; colonnes techniques `_ordreSeance` / `_ordreExo` / `_couleur` masquées. Clé de regroupement méso = `(semaine, ordre)` car `order` est réinitialisé par semaine.
+
+**UI** : bouton « Exporter (Excel) » sur les écrans détail méso/programme ; bouton « Importer » (`headerLeft`) sur les onglets Mésocycle et Programmes.
+
+**Limite connue** : import non transactionnel (validation faite au parse, avant tout écrit).
+
+**Deps ajoutées** : `xlsx-js-style`, `expo-file-system`, `expo-document-picker`, `expo-sharing` ; dev : `tsx`.
+
+---
+
 ## Patterns récurrents
 
 ### Rafraîchissement au focus
@@ -173,13 +205,13 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 4 | Création d'événements avec date picker | ✅ |
 | 5 | Mésocycles (CRUD complet, semaines, objectifs par série, mémoire) | ✅ |
 | 6 | Séance live (timer, log sets, supersets, unités kg/lb, unilatéral) | ✅ |
+| 8 | Export / import XLSX des mésocycles et programmes | ✅ |
 
 ## Phases restantes
 
 | Phase | Contenu |
 |---|---|
 | 7 | Onglet Progression (graphiques, records) |
-| 8 | Export / import mésocycle et programme |
 | 9 | Ancrage calendaire des mésocycles |
 
 ---
