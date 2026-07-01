@@ -14,6 +14,8 @@ import {
 
 import { db } from '../../../src/db';
 import { calendarEvents, programSessions, programs } from '../../../src/db/schema';
+import { DatePickerField } from '../../../src/components/DatePickerField';
+import { WeekPickerField } from '../../../src/components/WeekPickerField';
 import { generateId } from '../../../src/utils/generateId';
 
 type Program = typeof programs.$inferSelect;
@@ -39,29 +41,12 @@ function dateToIsoWeek(d: Date): string {
   return `${year}-W${pad(w)}`;
 }
 
-function buildWeekOptions(): { label: string; value: string }[] {
-  const today = new Date();
-  const MONTHS = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'août', 'sep', 'oct', 'nov', 'déc'];
-  return Array.from({ length: 8 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i * 7);
-    const isoWeek = dateToIsoWeek(d);
-    const [yearStr, wStr] = isoWeek.split('-W');
-    const w = parseInt(wStr, 10);
-    const jan4 = new Date(parseInt(yearStr, 10), 0, 4);
-    const monday = new Date(jan4);
-    monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (w - 1) * 7);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    const fmt = (dt: Date) => `${dt.getDate()} ${MONTHS[dt.getMonth()]}`;
-    return { value: isoWeek, label: `Sem. ${w} · ${fmt(monday)} – ${fmt(sunday)}` };
-  });
-}
 
-function parseDateParam(dateStr?: string) {
-  if (!dateStr) return { day: '', month: '', year: '' };
-  const [y, m, d] = dateStr.split('-');
-  return { day: d ?? '', month: m ?? '', year: y ?? '' };
+function parseDateParam(dateStr?: string): Date | null {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return isNaN(date.getTime()) ? null : date;
 }
 
 export default function NouvelEvenementScreen() {
@@ -76,11 +61,8 @@ export default function NouvelEvenementScreen() {
   // Si le param date existe on force 'dated', sinon l'utilisateur choisit
   const [eventMode, setEventMode] = useState<EventMode>(date ? 'dated' : 'undated');
 
-  // Champs date
-  const initial = parseDateParam(date);
-  const [dateDay, setDateDay] = useState(initial.day);
-  const [dateMonth, setDateMonth] = useState(initial.month);
-  const [dateYear, setDateYear] = useState(initial.year);
+  // Date sélectionnée
+  const [selectedDate, setSelectedDate] = useState<Date | null>(parseDateParam(date));
 
   // Séance selection
   const [allPrograms, setAllPrograms] = useState<Program[]>([]);
@@ -90,8 +72,7 @@ export default function NouvelEvenementScreen() {
   const [selectedSession, setSelectedSession] = useState<ProgramSession | null>(null);
 
   // Semaine (mode undated)
-  const weekOptions = buildWeekOptions();
-  const [selectedWeek, setSelectedWeek] = useState(weekOptions[0].value);
+  const [selectedWeek, setSelectedWeek] = useState(() => dateToIsoWeek(new Date()));
 
   useEffect(() => {
     db.select().from(programs).orderBy(asc(programs.name)).then(setAllPrograms);
@@ -123,20 +104,15 @@ export default function NouvelEvenementScreen() {
     if (!title) setTitle(session.name);
   };
 
-  const isDateValid = () => {
-    const d = parseInt(dateDay, 10);
-    const m = parseInt(dateMonth, 10);
-    const y = parseInt(dateYear, 10);
-    return dateYear.length === 4 && d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2020;
-  };
+  const isDateValid = () => selectedDate !== null;
 
   const canCreate = title.trim().length > 0 && (eventMode === 'undated' || isDateValid());
 
   const handleCreate = async () => {
     if (!canCreate) return;
 
-    const eventDate = eventMode === 'dated'
-      ? `${dateYear}-${pad(parseInt(dateMonth, 10))}-${pad(parseInt(dateDay, 10))}`
+    const eventDate = eventMode === 'dated' && selectedDate
+      ? `${selectedDate.getFullYear()}-${pad(selectedDate.getMonth() + 1)}-${pad(selectedDate.getDate())}`
       : null;
     const eventWeek = eventMode === 'undated' ? selectedWeek : null;
 
@@ -243,99 +219,46 @@ export default function NouvelEvenementScreen() {
           </View>
         )}
 
-        {/* Sélecteur de mode — visible seulement si pas de date en param */}
-        {!date && (
-          <View style={styles.section}>
-            <Text style={styles.label}>Quand</Text>
-            <View style={styles.modeRow}>
-              <Pressable
-                style={[styles.modeCard, eventMode === 'dated' && styles.modeCardActive]}
-                onPress={() => setEventMode('dated')}
-              >
-                <Text style={[styles.modeCardTitle, eventMode === 'dated' && styles.modeCardTitleActive]}>
-                  Date précise
-                </Text>
-                <Text style={[styles.modeCardSub, eventMode === 'dated' && styles.modeCardSubActive]}>
-                  Événement un jour donné
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modeCard, eventMode === 'undated' && styles.modeCardActive]}
-                onPress={() => setEventMode('undated')}
-              >
-                <Text style={[styles.modeCardTitle, eventMode === 'undated' && styles.modeCardTitleActive]}>
-                  Sans date fixe
-                </Text>
-                <Text style={[styles.modeCardSub, eventMode === 'undated' && styles.modeCardSubActive]}>
-                  Planifié à la semaine
-                </Text>
-              </Pressable>
-            </View>
+        {/* Sélecteur de mode : date précise / semaine */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Quand</Text>
+          <View style={styles.modeRow}>
+            <Pressable
+              style={[styles.modeCard, eventMode === 'dated' && styles.modeCardActive]}
+              onPress={() => setEventMode('dated')}
+            >
+              <Text style={[styles.modeCardTitle, eventMode === 'dated' && styles.modeCardTitleActive]}>
+                Date précise
+              </Text>
+              <Text style={[styles.modeCardSub, eventMode === 'dated' && styles.modeCardSubActive]}>
+                Événement un jour donné
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modeCard, eventMode === 'undated' && styles.modeCardActive]}
+              onPress={() => setEventMode('undated')}
+            >
+              <Text style={[styles.modeCardTitle, eventMode === 'undated' && styles.modeCardTitleActive]}>
+                Sans date fixe
+              </Text>
+              <Text style={[styles.modeCardSub, eventMode === 'undated' && styles.modeCardSubActive]}>
+                Planifié à la semaine
+              </Text>
+            </Pressable>
           </View>
-        )}
+        </View>
 
         {/* Date picker ou semaine selon le mode */}
         <View style={styles.section}>
           {eventMode === 'dated' ? (
             <>
               <Text style={styles.label}>Date</Text>
-              <View style={styles.dateInputRow}>
-                <View style={styles.dateField}>
-                  <TextInput
-                    style={styles.dateInput}
-                    value={dateDay}
-                    onChangeText={(t) => setDateDay(t.replace(/\D/g, '').slice(0, 2))}
-                    keyboardType="numeric"
-                    maxLength={2}
-                    placeholder="JJ"
-                    textAlign="center"
-                  />
-                  <Text style={styles.dateFieldLabel}>Jour</Text>
-                </View>
-                <Text style={styles.dateSep}>/</Text>
-                <View style={styles.dateField}>
-                  <TextInput
-                    style={styles.dateInput}
-                    value={dateMonth}
-                    onChangeText={(t) => setDateMonth(t.replace(/\D/g, '').slice(0, 2))}
-                    keyboardType="numeric"
-                    maxLength={2}
-                    placeholder="MM"
-                    textAlign="center"
-                  />
-                  <Text style={styles.dateFieldLabel}>Mois</Text>
-                </View>
-                <Text style={styles.dateSep}>/</Text>
-                <View style={[styles.dateField, { flex: 1.8 }]}>
-                  <TextInput
-                    style={styles.dateInput}
-                    value={dateYear}
-                    onChangeText={(t) => setDateYear(t.replace(/\D/g, '').slice(0, 4))}
-                    keyboardType="numeric"
-                    maxLength={4}
-                    placeholder="AAAA"
-                    textAlign="center"
-                  />
-                  <Text style={styles.dateFieldLabel}>Année</Text>
-                </View>
-              </View>
+              <DatePickerField value={selectedDate} onChange={setSelectedDate} />
             </>
           ) : (
             <>
               <Text style={styles.label}>Semaine</Text>
-              <View style={styles.weekPickerRow}>
-                {weekOptions.map((opt) => (
-                  <Pressable
-                    key={opt.value}
-                    style={[styles.weekChip, selectedWeek === opt.value && styles.weekChipActive]}
-                    onPress={() => setSelectedWeek(opt.value)}
-                  >
-                    <Text style={[styles.weekChipText, selectedWeek === opt.value && styles.weekChipTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <WeekPickerField value={selectedWeek} onChange={setSelectedWeek} />
             </>
           )}
         </View>
@@ -414,25 +337,6 @@ const styles = StyleSheet.create({
   modeCardTitleActive: { color: '#007AFF' },
   modeCardSub: { fontSize: 11, color: '#999', textAlign: 'center' },
   modeCardSubActive: { color: '#5b9cf6' },
-
-  dateInputRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
-  dateField: { flex: 1, alignItems: 'center' },
-  dateInput: {
-    width: '100%', borderWidth: 1, borderColor: '#e0e0e0',
-    borderRadius: 8, paddingVertical: 10,
-    fontSize: 18, fontWeight: '600', backgroundColor: '#fafafa', color: '#111',
-  },
-  dateFieldLabel: { fontSize: 11, color: '#888', marginTop: 5 },
-  dateSep: { fontSize: 22, color: '#ccc', marginTop: 8 },
-
-  weekPickerRow: { gap: 8 },
-  weekChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#e0e0e0',
-  },
-  weekChipActive: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
-  weekChipText: { fontSize: 13, color: '#444' },
-  weekChipTextActive: { color: '#fff' },
 
   createBtn: {
     backgroundColor: '#007AFF', marginHorizontal: 12, marginTop: 16,
