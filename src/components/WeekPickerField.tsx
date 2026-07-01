@@ -1,30 +1,9 @@
 import { Calendar, DateData } from 'react-native-calendars';
 import { StyleSheet, Text, View } from 'react-native';
 
-function pad(n: number) { return String(n).padStart(2, '0'); }
+import { dateToIsoWeek, isoWeekToMonday, pad } from '../utils/dateUtils';
 
 const MONTHS = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'août', 'sep', 'oct', 'nov', 'déc'];
-
-function isoWeekToMonday(isoWeek: string): Date {
-  const [yearStr, wStr] = isoWeek.split('-W');
-  const year = parseInt(yearStr, 10);
-  const week = parseInt(wStr, 10);
-  const jan4 = new Date(year, 0, 4);
-  const dow = (jan4.getDay() + 6) % 7; // Mon=0
-  const monday = new Date(jan4);
-  monday.setDate(jan4.getDate() - dow + (week - 1) * 7);
-  return monday;
-}
-
-function dateToIsoWeek(d: Date): string {
-  const tmp = new Date(d);
-  tmp.setHours(0, 0, 0, 0);
-  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
-  const year = tmp.getFullYear();
-  const jan4 = new Date(year, 0, 4);
-  const w = 1 + Math.round(((tmp.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
-  return `${year}-W${pad(w)}`;
-}
 
 function buildMarkedDates(isoWeek: string): Record<string, object> {
   const monday = isoWeekToMonday(isoWeek);

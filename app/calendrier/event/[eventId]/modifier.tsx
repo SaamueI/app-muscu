@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 
 import { db } from '../../../../src/db';
-import { calendarEvents, programSessions, programs } from '../../../../src/db/schema';
+import { calendarEvents, mesoSessions, programSessions, programs } from '../../../../src/db/schema';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 type Program = typeof programs.$inferSelect;
@@ -47,6 +47,7 @@ export default function ModifierEvenementScreen() {
   const [sessionsByProgram, setSessionsByProgram] = useState<Record<string, ProgramSession[]>>({});
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<ProgramSession | null>(null);
+  const [linkedMesoSessionTitle, setLinkedMesoSessionTitle] = useState<string | null>(null);
 
   useEffect(() => {
     if (!eventId) return;
@@ -62,17 +63,22 @@ export default function ModifierEvenementScreen() {
         setStatus(ev.status ?? 'planned');
 
         if (ev.type === 'workout_session') {
-          const progs = await db.select().from(programs).orderBy(asc(programs.name));
-          setAllPrograms(progs);
+          if (ev.refType === 'meso_session' && ev.refId) {
+            const [ms] = await db.select().from(mesoSessions).where(eq(mesoSessions.id, ev.refId));
+            setLinkedMesoSessionTitle(ms?.title ?? 'Séance de mésocycle');
+          } else {
+            const progs = await db.select().from(programs).orderBy(asc(programs.name));
+            setAllPrograms(progs);
 
-          if (ev.refId) {
-            const sessionRows = await db
-              .select()
-              .from(programSessions)
-              .where(eq(programSessions.id, ev.refId));
-            if (sessionRows[0]) {
-              setSelectedSessionId(sessionRows[0].id);
-              setSelectedSession(sessionRows[0]);
+            if (ev.refId) {
+              const sessionRows = await db
+                .select()
+                .from(programSessions)
+                .where(eq(programSessions.id, ev.refId));
+              if (sessionRows[0]) {
+                setSelectedSessionId(sessionRows[0].id);
+                setSelectedSession(sessionRows[0]);
+              }
             }
           }
         }
@@ -106,13 +112,19 @@ export default function ModifierEvenementScreen() {
 
   const handleSave = async () => {
     if (!title.trim() || !eventId) return;
+    const isMesoLinked = event?.refType === 'meso_session';
     await db
       .update(calendarEvents)
       .set({
         title: title.trim(),
         description: description.trim() || null,
         status,
-        refId: event?.type === 'workout_session' ? (selectedSessionId ?? null) : event?.refId ?? null,
+        ...(isMesoLinked
+          ? {}
+          : {
+              refId: event?.type === 'workout_session' ? (selectedSessionId ?? null) : event?.refId ?? null,
+              refType: event?.type === 'workout_session' && selectedSessionId ? ('program_session' as const) : event?.refType ?? null,
+            }),
       })
       .where(eq(calendarEvents.id, eventId));
     router.back();
@@ -179,45 +191,58 @@ export default function ModifierEvenementScreen() {
           <View style={styles.section}>
             <Text style={styles.label}>Séance</Text>
 
-            {selectedSession && (
-              <View style={styles.selectedSession}>
-                <View style={[styles.sessionDot, { backgroundColor: selectedSession.color }]} />
-                <Text style={styles.selectedSessionText}>{selectedSession.name}</Text>
-                <Pressable onPress={() => { setSelectedSessionId(null); setSelectedSession(null); }}>
-                  <Text style={styles.clearSession}>×</Text>
-                </Pressable>
+            {event.refType === 'meso_session' ? (
+              <View style={styles.readOnlyRow}>
+                <Text style={styles.readOnlyText}>
+                  {linkedMesoSessionTitle ?? 'Séance de mésocycle'}
+                </Text>
+                <Text style={[styles.readOnlyText, { fontSize: 12, color: '#aaa', marginTop: 4 }]}>
+                  Liée à un mésocycle ancré — modifiable depuis l'écran du mésocycle.
+                </Text>
               </View>
-            )}
-
-            {allPrograms.length === 0 ? (
-              <Text style={styles.emptyText}>Aucun programme créé.</Text>
             ) : (
-              allPrograms.map((prog) => (
-                <View key={prog.id}>
-                  <Pressable style={styles.programRow} onPress={() => handleToggleProgram(prog)}>
-                    <Text style={styles.programName}>{prog.name}</Text>
-                    <Text style={styles.programChevron}>{expandedProgramId === prog.id ? '▾' : '▸'}</Text>
-                  </Pressable>
-                  {expandedProgramId === prog.id && (
-                    <View style={styles.sessionList}>
-                      {(sessionsByProgram[prog.id] ?? []).map((s) => (
-                        <Pressable
-                          key={s.id}
-                          style={[styles.sessionRow, selectedSessionId === s.id && styles.sessionRowSelected]}
-                          onPress={() => handleSelectSession(s)}
-                        >
-                          <View style={[styles.sessionDot, { backgroundColor: s.color }]} />
-                          <Text style={styles.sessionName}>{s.name}</Text>
-                          {selectedSessionId === s.id && <Text style={styles.checkmark}>✓</Text>}
-                        </Pressable>
-                      ))}
-                      {(sessionsByProgram[prog.id] ?? []).length === 0 && (
-                        <Text style={styles.emptyText}>Aucune séance dans ce programme.</Text>
+              <>
+                {selectedSession && (
+                  <View style={styles.selectedSession}>
+                    <View style={[styles.sessionDot, { backgroundColor: selectedSession.color }]} />
+                    <Text style={styles.selectedSessionText}>{selectedSession.name}</Text>
+                    <Pressable onPress={() => { setSelectedSessionId(null); setSelectedSession(null); }}>
+                      <Text style={styles.clearSession}>×</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {allPrograms.length === 0 ? (
+                  <Text style={styles.emptyText}>Aucun programme créé.</Text>
+                ) : (
+                  allPrograms.map((prog) => (
+                    <View key={prog.id}>
+                      <Pressable style={styles.programRow} onPress={() => handleToggleProgram(prog)}>
+                        <Text style={styles.programName}>{prog.name}</Text>
+                        <Text style={styles.programChevron}>{expandedProgramId === prog.id ? '▾' : '▸'}</Text>
+                      </Pressable>
+                      {expandedProgramId === prog.id && (
+                        <View style={styles.sessionList}>
+                          {(sessionsByProgram[prog.id] ?? []).map((s) => (
+                            <Pressable
+                              key={s.id}
+                              style={[styles.sessionRow, selectedSessionId === s.id && styles.sessionRowSelected]}
+                              onPress={() => handleSelectSession(s)}
+                            >
+                              <View style={[styles.sessionDot, { backgroundColor: s.color }]} />
+                              <Text style={styles.sessionName}>{s.name}</Text>
+                              {selectedSessionId === s.id && <Text style={styles.checkmark}>✓</Text>}
+                            </Pressable>
+                          ))}
+                          {(sessionsByProgram[prog.id] ?? []).length === 0 && (
+                            <Text style={styles.emptyText}>Aucune séance dans ce programme.</Text>
+                          )}
+                        </View>
                       )}
                     </View>
-                  )}
-                </View>
-              ))
+                  ))
+                )}
+              </>
             )}
           </View>
         )}

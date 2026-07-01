@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { db } from '../../../../../src/db';
+import { syncMesoCalendarEvents } from '../../../../../src/db/meso';
 import { mesoSessions } from '../../../../../src/db/schema';
 
 const SESSION_COLORS = [
@@ -35,7 +36,7 @@ const DAYS: Array<{ key: Weekday; label: string }> = [
 ];
 
 export default function ModifierMesoSessionScreen() {
-  const { mesoSessionId } = useLocalSearchParams<{ mesoSessionId: string }>();
+  const { id, mesoSessionId } = useLocalSearchParams<{ id: string; mesoSessionId: string }>();
   const router = useRouter();
 
   const [title, setTitle] = useState('');
@@ -68,6 +69,7 @@ export default function ModifierMesoSessionScreen() {
         day: day ?? null,
       })
       .where(eq(mesoSessions.id, mesoSessionId));
+    if (id) await syncMesoCalendarEvents(id);
     router.back();
   };
 

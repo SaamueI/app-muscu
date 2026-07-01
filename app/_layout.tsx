@@ -83,6 +83,7 @@ function RootLayoutNav() {
         <Stack.Screen name="mesocycles/nouveau" options={{ title: 'Nouveau mésocycle' }} />
         <Stack.Screen name="mesocycles/[id]" options={{ title: 'Mésocycle' }} />
         <Stack.Screen name="mesocycles/[id]/modifier" options={{ title: 'Modifier le mésocycle' }} />
+        <Stack.Screen name="mesocycles/[id]/ancrer" options={{ title: 'Ancrer au calendrier', presentation: 'modal' }} />
         <Stack.Screen name="mesocycles/[id]/sessions" options={{ title: 'Séances du mésocycle' }} />
         <Stack.Screen name="mesocycles/[id]/sessions/ajouter" options={{ title: 'Ajouter une séance', presentation: 'modal' }} />
         <Stack.Screen name="mesocycles/[id]/sessions/[mesoSessionId]" options={{ title: 'Séance' }} />

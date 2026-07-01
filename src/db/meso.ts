@@ -1,7 +1,8 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 
 import { db } from './index';
 import {
+  calendarEvents,
   mesocycles,
   mesoExercises,
   mesoSessions,
@@ -9,9 +10,11 @@ import {
   programExercises,
   programSessions,
   targetMemory,
+  workoutSessions,
   type MemorizedSet,
 } from './schema';
 import { generateId } from '../utils/generateId';
+import { computeSessionSchedule, type Weekday } from '../utils/dateUtils';
 
 type ProgramExercise = typeof programExercises.$inferSelect;
 
@@ -95,6 +98,122 @@ async function insertMesoExercise(
   return meId;
 }
 
+// ─── Synchronisation calendrier ────────────────────────────────────────────────
+// Idempotent : upsert un calendar_event par (refType='meso_session', refId=mesoSessionId)
+// pour chaque meso_session du mésocycle, uniquement si le méso est ancré.
+// N'écrase jamais `status` (peut valoir 'completed'/'skipped' suite à
+// finishSession() ou édition manuelle) ni `description`.
+export async function syncMesoCalendarEvents(mesocycleId: string): Promise<void> {
+  const [meso] = await db.select().from(mesocycles).where(eq(mesocycles.id, mesocycleId));
+  if (!meso || !meso.startDate) return;
+
+  const sessions = await db
+    .select()
+    .from(mesoSessions)
+    .where(eq(mesoSessions.mesocycleId, mesocycleId));
+
+  for (const s of sessions) {
+    const { date, week } = computeSessionSchedule(
+      meso.startDate,
+      s.weekIndex,
+      (s.day as Weekday | null) ?? null
+    );
+    const title = s.title || 'Séance';
+
+    const [existing] = await db
+      .select()
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.refType, 'meso_session'), eq(calendarEvents.refId, s.id)));
+
+    if (existing) {
+      await db
+        .update(calendarEvents)
+        .set({ title, date, week: date ? null : week })
+        .where(eq(calendarEvents.id, existing.id));
+    } else {
+      await db.insert(calendarEvents).values({
+        id: generateId(),
+        type: 'workout_session',
+        status: 'planned',
+        date,
+        week: date ? null : week,
+        refId: s.id,
+        refType: 'meso_session',
+        title,
+      });
+    }
+  }
+}
+
+// ─── Suppression cascade ────────────────────────────────────────────────────────
+// workoutSessions.calendarEventId est NOT NULL sans onDelete → supprimer un
+// calendar_event référencé par un workout_session lève une erreur FK. On ne
+// supprime donc que les calendar_events orphelins (séance jamais commencée),
+// préservant l'historique des séances déjà commencées/terminées.
+
+async function deleteCalendarEventForMesoSessionIfOrphan(mesoSessionId: string): Promise<void> {
+  const [ev] = await db
+    .select()
+    .from(calendarEvents)
+    .where(and(eq(calendarEvents.refType, 'meso_session'), eq(calendarEvents.refId, mesoSessionId)));
+  if (!ev) return;
+
+  const [linkedSession] = await db
+    .select()
+    .from(workoutSessions)
+    .where(eq(workoutSessions.calendarEventId, ev.id));
+  if (linkedSession) return;
+
+  await db.delete(calendarEvents).where(eq(calendarEvents.id, ev.id));
+}
+
+// Supprime une meso_session et son calendar_event orphelin associé.
+export async function deleteMesoSessionCascade(mesoSessionId: string): Promise<void> {
+  await deleteCalendarEventForMesoSessionIfOrphan(mesoSessionId);
+  await db.delete(mesoSessions).where(eq(mesoSessions.id, mesoSessionId));
+}
+
+// Supprime un mésocycle entier : nettoie d'abord les calendar_events orphelins
+// de toutes ses meso_sessions (AVANT de supprimer mesocycles, car le cascade FK
+// Drizzle onDelete:'cascade' supprime les meso_sessions en même temps que le
+// mésocycle — il faut donc nettoyer pendant qu'elles existent encore).
+export async function deleteMesocycleCascade(mesocycleId: string): Promise<void> {
+  const sessions = await db
+    .select()
+    .from(mesoSessions)
+    .where(eq(mesoSessions.mesocycleId, mesocycleId));
+
+  for (const s of sessions) {
+    await deleteCalendarEventForMesoSessionIfOrphan(s.id);
+  }
+
+  await db.delete(mesocycles).where(eq(mesocycles.id, mesocycleId));
+}
+
+// ─── Ancrage calendaire ──────────────────────────────────────────────────────
+
+// Ancre (ou ré-ancre) un mésocycle à une date de départ (lundi ISO,
+// "YYYY-MM-DD") et synchronise immédiatement ses calendar_events.
+export async function anchorMesocycle(mesocycleId: string, startDate: string): Promise<void> {
+  await db.update(mesocycles).set({ startDate }).where(eq(mesocycles.id, mesocycleId));
+  await syncMesoCalendarEvents(mesocycleId);
+}
+
+// Désancre un mésocycle : startDate = null, supprime les calendar_events générés
+// non commencés. Les séances déjà commencées/terminées gardent leur event intact.
+export async function unanchorMesocycle(mesocycleId: string): Promise<void> {
+  const sessions = await db
+    .select()
+    .from(mesoSessions)
+    .where(eq(mesoSessions.mesocycleId, mesocycleId));
+
+  for (const s of sessions) {
+    await deleteCalendarEventForMesoSessionIfOrphan(s.id);
+  }
+
+  await db.update(mesocycles).set({ startDate: null }).where(eq(mesocycles.id, mesocycleId));
+}
+
 // ─── Copie d'une program_session dans un mésocycle ────────────────────────────
 
 export async function copyProgramSessionToMeso(
@@ -145,6 +264,7 @@ export async function copyProgramSessionToMeso(
     );
   }
 
+  await syncMesoCalendarEvents(mesocycleId);
   return sessionId;
 }
 
@@ -173,6 +293,7 @@ export async function addBlankMesoSession(
     title: 'Nouvelle séance',
     color: '#007AFF',
   });
+  await syncMesoCalendarEvents(mesocycleId);
   return sessionId;
 }
 
@@ -199,7 +320,53 @@ export async function addWeek(mesocycleId: string): Promise<number> {
     }
   }
 
+  await syncMesoCalendarEvents(mesocycleId);
   return newWeek;
+}
+
+// Copie profonde d'une meso_session vers un mésocycle/semaine cible (nouveaux IDs).
+// Réutilisée par duplicateWeek et duplicateMesocycle.
+async function copyMesoSessionDeep(
+  src: typeof mesoSessions.$inferSelect,
+  targetMesocycleId: string,
+  targetWeekIndex: number
+): Promise<string> {
+  const newSessionId = generateId();
+  await db.insert(mesoSessions).values({
+    id: newSessionId,
+    mesocycleId: targetMesocycleId,
+    programSessionId: src.programSessionId,
+    weekIndex: targetWeekIndex,
+    order: src.order,
+    title: src.title,
+    note: src.note,
+    day: src.day,
+    color: src.color,
+  });
+
+  const exos = await db
+    .select()
+    .from(mesoExercises)
+    .where(eq(mesoExercises.mesoSessionId, src.id))
+    .orderBy(asc(mesoExercises.order));
+
+  for (const ex of exos) {
+    const sets = await db
+      .select()
+      .from(mesoSets)
+      .where(eq(mesoSets.mesoExerciseId, ex.id))
+      .orderBy(asc(mesoSets.setNumber));
+    await insertMesoExercise(
+      newSessionId,
+      ex.exerciseId,
+      (ex.alternativeExerciseIds as string[] | null) ?? null,
+      ex.order,
+      ex.selectedVariation,
+      sets.map(({ id, mesoExerciseId, ...rest }) => rest)
+    );
+  }
+
+  return newSessionId;
 }
 
 // Copie profonde de toutes les séances d'une semaine vers une nouvelle semaine.
@@ -218,43 +385,42 @@ export async function duplicateWeek(mesocycleId: string, srcWeek: number): Promi
   const weekSessions = sessions.filter((s) => s.weekIndex === srcWeek);
 
   for (const s of weekSessions) {
-    const newSessionId = generateId();
-    await db.insert(mesoSessions).values({
-      id: newSessionId,
-      mesocycleId,
-      programSessionId: s.programSessionId,
-      weekIndex: newWeek,
-      order: s.order,
-      title: s.title,
-      note: s.note,
-      day: s.day,
-      color: s.color,
-    });
-
-    const exos = await db
-      .select()
-      .from(mesoExercises)
-      .where(eq(mesoExercises.mesoSessionId, s.id))
-      .orderBy(asc(mesoExercises.order));
-
-    for (const ex of exos) {
-      const sets = await db
-        .select()
-        .from(mesoSets)
-        .where(eq(mesoSets.mesoExerciseId, ex.id))
-        .orderBy(asc(mesoSets.setNumber));
-      await insertMesoExercise(
-        newSessionId,
-        ex.exerciseId,
-        (ex.alternativeExerciseIds as string[] | null) ?? null,
-        ex.order,
-        ex.selectedVariation,
-        sets.map(({ id, mesoExerciseId, ...rest }) => rest)
-      );
-    }
+    await copyMesoSessionDeep(s, mesocycleId, newWeek);
   }
 
+  await syncMesoCalendarEvents(mesocycleId);
   return newWeek;
+}
+
+// Duplication complète et indépendante d'un mésocycle : nouvelle mesocycleId,
+// nouveaux mesoSessions/mesoExercises/mesoSets (nouveaux IDs). startDate: null
+// (jamais ancrée automatiquement). Aucun calendar_event copié.
+export async function duplicateMesocycle(mesocycleId: string): Promise<string> {
+  const [src] = await db.select().from(mesocycles).where(eq(mesocycles.id, mesocycleId));
+  if (!src) throw new Error(`mésocycle introuvable : ${mesocycleId}`);
+
+  const newMesocycleId = generateId();
+  await db.insert(mesocycles).values({
+    id: newMesocycleId,
+    programId: src.programId,
+    name: `${src.name} (copie)`,
+    numWeeks: src.numWeeks,
+    startDate: null,
+    notes: src.notes,
+    createdAt: new Date().toISOString(),
+  });
+
+  const sessions = await db
+    .select()
+    .from(mesoSessions)
+    .where(eq(mesoSessions.mesocycleId, mesocycleId))
+    .orderBy(asc(mesoSessions.order));
+
+  for (const s of sessions) {
+    await copyMesoSessionDeep(s, newMesocycleId, s.weekIndex);
+  }
+
+  return newMesocycleId;
 }
 
 // Supprime une semaine (cascade sur exos/sets) et renumérote les suivantes.
@@ -266,7 +432,7 @@ export async function deleteWeek(mesocycleId: string, week: number): Promise<voi
 
   for (const s of sessions) {
     if (s.weekIndex === week) {
-      await db.delete(mesoSessions).where(eq(mesoSessions.id, s.id));
+      await deleteMesoSessionCascade(s.id);
     } else if (s.weekIndex > week) {
       await db
         .update(mesoSessions)
@@ -282,6 +448,8 @@ export async function deleteWeek(mesocycleId: string, week: number): Promise<voi
       .set({ numWeeks: meso.numWeeks - 1 })
       .where(eq(mesocycles.id, mesocycleId));
   }
+
+  await syncMesoCalendarEvents(mesocycleId);
 }
 
 // ─── Mémoire des objectifs ────────────────────────────────────────────────────

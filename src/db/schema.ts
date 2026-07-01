@@ -101,6 +101,7 @@ export const calendarEvents = sqliteTable('calendar_events', {
   date: text('date'),
   week: text('week'),
   refId: text('ref_id'),
+  refType: text('ref_type', { enum: ['program_session', 'meso_session'] }),
   title: text('title').notNull().default(''),
   description: text('description'),
 });
