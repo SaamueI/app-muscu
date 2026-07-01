@@ -8,7 +8,7 @@ Application mobile React Native / Expo de suivi d'entraînement.
 
 | Outil | Version |
 |---|---|
-| Expo SDK | ~56.0.0 |
+| Expo SDK | ~54.0.0 |
 | React Native | 0.81.5 |
 | expo-router | ~6.0.24 |
 | expo-sqlite | ~16.0.10 |
@@ -49,6 +49,8 @@ src/
     TimerDisplay.tsx        # Composant timer (chrono / compte à rebours)
     RestPresetPicker.tsx    # Chips preset temps de repos
     SetPerformanceModal.tsx # Modal saisie performance (poids, reps, RIR…)
+    DatePickerField.tsx     # Bouton → picker natif OS (date) ; props: value: Date|null, onChange
+    WeekPickerField.tsx     # Calendrier inline react-native-calendars, sélection à la semaine ; props: value: string (ISO "YYYY-Www"), onChange
   utils/
     generateId.ts
     altPickerStore.ts      # Store module-level pour passer un exo entre écrans
@@ -177,7 +179,7 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | Phase | Contenu |
 |---|---|
 | 7 | Onglet Progression (graphiques, records) |
-| 8 | Export / import mésocycle |
+| 8 | Export / import mésocycle et programme |
 | 9 | Ancrage calendaire des mésocycles |
 
 ---

@@ -12,6 +12,7 @@ import {
 
 import { db } from '../../src/db';
 import { programExercises, programs, programSessions } from '../../src/db/schema';
+import { exportProgram } from '../../src/export/actions';
 import { generateId } from '../../src/utils/generateId';
 
 type Program = typeof programs.$inferSelect;
@@ -24,6 +25,14 @@ export default function ProgrammeDetailScreen() {
   const [program, setProgram] = useState<Program | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({});
+  const [exporting, setExporting] = useState(false);
+
+  const onExport = async () => {
+    if (!id || exporting) return;
+    setExporting(true);
+    await exportProgram(id);
+    setExporting(false);
+  };
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -134,6 +143,12 @@ export default function ProgrammeDetailScreen() {
           <Text style={styles.addSessionBtnText}>+ Ajouter une séance</Text>
         </Pressable>
       </View>
+
+      <Pressable style={styles.exportBtn} onPress={onExport} disabled={exporting}>
+        <Text style={styles.exportBtnText}>
+          {exporting ? 'Export…' : 'Exporter (Excel)'}
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -206,4 +221,10 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   addSessionBtnText: { color: '#007AFF', fontWeight: '600', fontSize: 14 },
+
+  exportBtn: {
+    marginHorizontal: 12, marginTop: 20, borderRadius: 12, paddingVertical: 13,
+    alignItems: 'center', backgroundColor: '#007AFF',
+  },
+  exportBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

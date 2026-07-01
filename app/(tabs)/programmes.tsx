@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useLayoutEffect, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -11,20 +11,35 @@ import {
 
 import { db } from '../../src/db';
 import { programs } from '../../src/db/schema';
+import { pickAndImportProgram } from '../../src/export/actions';
 
 type Program = typeof programs.$inferSelect;
 
 export default function ProgrammesScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const [allPrograms, setAllPrograms] = useState<Program[]>([]);
   const [search, setSearch] = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
     db.select().from(programs).then(setAllPrograms);
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onImport = async () => {
+    const newId = await pickAndImportProgram();
+    if (newId) router.push(`/programmes/${newId}`);
   };
 
-  useEffect(() => {
-    load();
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Pressable onPress={onImport} style={styles.headerLeft}>
+          <Text style={styles.headerBtn}>Importer</Text>
+        </Pressable>
+      ),
+    });
   }, []);
 
   const filtered = search.trim()
@@ -75,6 +90,8 @@ export default function ProgrammesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f7' },
+  headerLeft: { marginLeft: 12 },
+  headerBtn: { color: '#007AFF', fontSize: 16 },
 
   searchRow: {
     flexDirection: 'row',
