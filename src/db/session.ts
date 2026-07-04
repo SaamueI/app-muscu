@@ -94,11 +94,13 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
 
   let calEventId = params.calendarEventId;
   let resolvedProgramSessionId = params.programSessionId;
+  let resolvedMesoSessionId = params.mesoSessionId;
 
   if (!calEventId) {
     // Déterminer le titre et le refId depuis le template
     let title = 'Séance';
     let refId: string | null = null;
+    let refType: 'meso_session' | 'program_session' | null = null;
 
     if (params.mesoSessionId) {
       const [ms] = await db
@@ -107,6 +109,7 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
         .where(eq(mesoSessions.id, params.mesoSessionId));
       title = ms?.title ?? 'Séance';
       refId = params.mesoSessionId;
+      refType = 'meso_session';
       if (ms?.programSessionId) resolvedProgramSessionId = ms.programSessionId;
     } else if (params.programSessionId) {
       const [ps] = await db
@@ -115,6 +118,7 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
         .where(eq(programSessions.id, params.programSessionId));
       title = ps?.name ?? 'Séance';
       refId = params.programSessionId;
+      refType = 'program_session';
     }
 
     calEventId = generateId();
@@ -125,15 +129,32 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
       date: today,
       title,
       refId,
+      refType,
     });
   } else {
-    // Récupérer programSessionId depuis l'event si pas fourni
-    if (!resolvedProgramSessionId) {
+    // Résoudre programSessionId / mesoSessionId depuis l'event si pas fourni,
+    // en distinguant grâce à ref_type. FIX : avant, refId était toujours
+    // assigné à resolvedProgramSessionId même s'il pointait vers une
+    // meso_session, empêchant le pré-remplissage exercise_logs.
+    if (!resolvedProgramSessionId && !resolvedMesoSessionId) {
       const [ev] = await db
         .select()
         .from(calendarEvents)
         .where(eq(calendarEvents.id, calEventId));
-      if (ev?.refId) resolvedProgramSessionId = ev.refId;
+      if (ev?.refId) {
+        if (ev.refType === 'meso_session') {
+          resolvedMesoSessionId = ev.refId;
+          const [ms] = await db
+            .select()
+            .from(mesoSessions)
+            .where(eq(mesoSessions.id, ev.refId));
+          if (ms?.programSessionId) resolvedProgramSessionId = ms.programSessionId;
+        } else {
+          // 'program_session', ou refType NULL (event pré-migration non
+          // backfillé) : comportement par défaut inchangé.
+          resolvedProgramSessionId = ev.refId;
+        }
+      }
     }
   }
 
@@ -142,17 +163,17 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
     id: sessionId,
     calendarEventId: calEventId,
     programSessionId: resolvedProgramSessionId ?? null,
-    mesoSessionId: params.mesoSessionId ?? null,
+    mesoSessionId: resolvedMesoSessionId ?? null,
     date: today,
     startedAt: now,
   });
 
   // Initialiser les exercise_logs depuis le template
-  if (params.mesoSessionId) {
+  if (resolvedMesoSessionId) {
     const exos = await db
       .select()
       .from(mesoExercises)
-      .where(eq(mesoExercises.mesoSessionId, params.mesoSessionId))
+      .where(eq(mesoExercises.mesoSessionId, resolvedMesoSessionId))
       .orderBy(asc(mesoExercises.order));
 
     for (const ex of exos) {
@@ -386,4 +407,23 @@ export async function getExistingSession(calendarEventId: string): Promise<strin
     .from(workoutSessions)
     .where(eq(workoutSessions.calendarEventId, calendarEventId));
   return row?.id ?? null;
+}
+
+// ─── Suppression d'un événement calendrier ────────────────────────────────────
+// workoutSessions.calendarEventId est NOT NULL sans onDelete → supprimer un
+// calendar_event référencé par un workout_session lève une erreur FK. On
+// supprime donc d'abord la/les workout_session(s) liée(s) (leur suppression
+// cascade automatiquement vers exercise_logs puis set_logs, via les
+// ON DELETE CASCADE du schéma), avant de supprimer le calendar_event lui-même.
+export async function deleteCalendarEventCascade(calendarEventId: string): Promise<void> {
+  const linkedSessions = await db
+    .select()
+    .from(workoutSessions)
+    .where(eq(workoutSessions.calendarEventId, calendarEventId));
+
+  for (const ws of linkedSessions) {
+    await db.delete(workoutSessions).where(eq(workoutSessions.id, ws.id));
+  }
+
+  await db.delete(calendarEvents).where(eq(calendarEvents.id, calendarEventId));
 }

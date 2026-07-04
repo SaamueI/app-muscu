@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 
 import { db } from '../../../src/db';
-import { addWeek, deleteWeek, duplicateWeek } from '../../../src/db/meso';
+import { addWeek, deleteMesoSessionCascade, deleteWeek, duplicateWeek } from '../../../src/db/meso';
 import { mesocycles, mesoSessions } from '../../../src/db/schema';
 import { getSkipSessionConfirm, setSkipSessionConfirm } from '../../../src/utils/mesoDeletePref';
 
@@ -73,7 +73,7 @@ export default function SessionsEditorScreen() {
   };
 
   const deleteSession = (s: MesoSession) =>
-    runBusy(() => db.delete(mesoSessions).where(eq(mesoSessions.id, s.id)));
+    runBusy(() => deleteMesoSessionCascade(s.id));
 
   const askDeleteSession = (s: MesoSession) => {
     if (getSkipSessionConfirm()) {

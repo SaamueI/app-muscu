@@ -17,6 +17,7 @@ import { calendarEvents, programSessions, programs } from '../../../src/db/schem
 import { DatePickerField } from '../../../src/components/DatePickerField';
 import { WeekPickerField } from '../../../src/components/WeekPickerField';
 import { generateId } from '../../../src/utils/generateId';
+import { dateToIsoWeek, toDateStr } from '../../../src/utils/dateUtils';
 
 type Program = typeof programs.$inferSelect;
 type ProgramSession = typeof programSessions.$inferSelect;
@@ -28,19 +29,6 @@ const EVENT_TYPES = [
   { key: 'competition', label: 'Compétition' },
   { key: 'other', label: 'Autre' },
 ];
-
-function pad(n: number) { return String(n).padStart(2, '0'); }
-
-function dateToIsoWeek(d: Date): string {
-  const tmp = new Date(d);
-  tmp.setHours(0, 0, 0, 0);
-  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
-  const year = tmp.getFullYear();
-  const jan4 = new Date(year, 0, 4);
-  const w = 1 + Math.round(((tmp.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
-  return `${year}-W${pad(w)}`;
-}
-
 
 function parseDateParam(dateStr?: string): Date | null {
   if (!dateStr) return null;
@@ -112,7 +100,7 @@ export default function NouvelEvenementScreen() {
     if (!canCreate) return;
 
     const eventDate = eventMode === 'dated' && selectedDate
-      ? `${selectedDate.getFullYear()}-${pad(selectedDate.getMonth() + 1)}-${pad(selectedDate.getDate())}`
+      ? toDateStr(selectedDate)
       : null;
     const eventWeek = eventMode === 'undated' ? selectedWeek : null;
 

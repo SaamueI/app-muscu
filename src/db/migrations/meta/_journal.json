@@ -78,6 +78,13 @@
       "when": 1782700000000,
       "tag": "0010_workout_session_live",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1782700001000,
+      "tag": "0011_meso_calendar_anchor",
+      "breakpoints": true
     }
   ]
 }

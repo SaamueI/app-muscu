@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '../../src/db';
+import { duplicateMesocycle } from '../../src/db/meso';
 import { mesocycles, mesoSessions, programs } from '../../src/db/schema';
 import { exportMesocycle } from '../../src/export/actions';
 
@@ -22,12 +23,21 @@ export default function MesocycleDetailScreen() {
   const [programName, setProgramName] = useState<string | null>(null);
   const [sessions, setSessions] = useState<MesoSession[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   const onExport = async () => {
     if (!id || exporting) return;
     setExporting(true);
     await exportMesocycle(id);
     setExporting(false);
+  };
+
+  const onDuplicate = async () => {
+    if (!id || duplicating) return;
+    setDuplicating(true);
+    const newId = await duplicateMesocycle(id);
+    setDuplicating(false);
+    router.push(`/mesocycles/${newId}`);
   };
 
   const load = useCallback(async () => {
@@ -69,6 +79,12 @@ export default function MesocycleDetailScreen() {
         <Text style={styles.title}>{meso.name}</Text>
         {programName ? <Text style={styles.metaProg}>Programme : {programName}</Text> : null}
         {meso.notes ? <Text style={styles.notes}>{meso.notes}</Text> : null}
+        <Pressable style={styles.anchorRow} onPress={() => router.push(`/mesocycles/${id}/ancrer`)}>
+          <Text style={styles.anchorRowText}>
+            {meso.startDate ? `Ancré · départ ${meso.startDate}` : 'Non ancré au calendrier'}
+          </Text>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
       </View>
 
       <View style={styles.sectionHeadRow}>
@@ -114,6 +130,12 @@ export default function MesocycleDetailScreen() {
           {exporting ? 'Export…' : 'Exporter (Excel)'}
         </Text>
       </Pressable>
+
+      <Pressable style={styles.duplicateBtn} onPress={onDuplicate} disabled={duplicating}>
+        <Text style={styles.duplicateBtnText}>
+          {duplicating ? 'Duplication…' : 'Dupliquer'}
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -141,6 +163,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', color: '#111', paddingRight: 28 },
   metaProg: { fontSize: 14, color: '#007AFF', marginTop: 6 },
   notes: { fontSize: 14, color: '#444', marginTop: 8, lineHeight: 20 },
+  anchorRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f0f0f0',
+  },
+  anchorRowText: { fontSize: 14, color: '#007AFF', fontWeight: '500' },
 
   manageBtn: {
     backgroundColor: '#007AFF', marginHorizontal: 12, marginTop: 12,
@@ -168,4 +195,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', backgroundColor: '#007AFF',
   },
   exportBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  duplicateBtn: {
+    marginHorizontal: 12, marginTop: 10, borderRadius: 12, paddingVertical: 13,
+    alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#007AFF',
+  },
+  duplicateBtnText: { color: '#007AFF', fontWeight: '700', fontSize: 15 },
 });

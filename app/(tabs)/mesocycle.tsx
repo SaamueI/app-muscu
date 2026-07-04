@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '../../src/db';
+import { deleteMesocycleCascade, duplicateMesocycle } from '../../src/db/meso';
 import { mesocycles, programs } from '../../src/db/schema';
 import { pickAndImportMesocycle } from '../../src/export/actions';
 
@@ -59,7 +60,7 @@ export default function MesocycleScreen() {
         text: 'Supprimer',
         style: 'destructive',
         onPress: async () => {
-          await db.delete(mesocycles).where(eq(mesocycles.id, id));
+          await deleteMesocycleCascade(id);
           setOpenMenu(null);
           load();
         },
@@ -69,7 +70,8 @@ export default function MesocycleScreen() {
 
   const subtitle = (r: Row) => {
     const weeks = `${r.m.numWeeks} semaine${r.m.numWeeks > 1 ? 's' : ''}`;
-    return r.programName ? `${weeks} · ${r.programName}` : weeks;
+    const base = r.programName ? `${weeks} · ${r.programName}` : weeks;
+    return r.m.startDate ? `${base} · Ancré` : base;
   };
 
   return (
@@ -119,6 +121,18 @@ export default function MesocycleScreen() {
                   }}
                 >
                   <Text style={styles.actionText}>Modifier</Text>
+                </Pressable>
+                <View style={styles.actionDivider} />
+                <Pressable
+                  style={styles.actionItem}
+                  onPress={async () => {
+                    setOpenMenu(null);
+                    const newId = await duplicateMesocycle(item.m.id);
+                    load();
+                    router.push(`/mesocycles/${newId}`);
+                  }}
+                >
+                  <Text style={styles.actionText}>Dupliquer</Text>
                 </Pressable>
                 <View style={styles.actionDivider} />
                 <Pressable style={styles.actionItem} onPress={() => remove(item.m.id, item.m.name)}>
