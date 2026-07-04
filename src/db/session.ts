@@ -408,3 +408,22 @@ export async function getExistingSession(calendarEventId: string): Promise<strin
     .where(eq(workoutSessions.calendarEventId, calendarEventId));
   return row?.id ?? null;
 }
+
+// ─── Suppression d'un événement calendrier ────────────────────────────────────
+// workoutSessions.calendarEventId est NOT NULL sans onDelete → supprimer un
+// calendar_event référencé par un workout_session lève une erreur FK. On
+// supprime donc d'abord la/les workout_session(s) liée(s) (leur suppression
+// cascade automatiquement vers exercise_logs puis set_logs, via les
+// ON DELETE CASCADE du schéma), avant de supprimer le calendar_event lui-même.
+export async function deleteCalendarEventCascade(calendarEventId: string): Promise<void> {
+  const linkedSessions = await db
+    .select()
+    .from(workoutSessions)
+    .where(eq(workoutSessions.calendarEventId, calendarEventId));
+
+  for (const ws of linkedSessions) {
+    await db.delete(workoutSessions).where(eq(workoutSessions.id, ws.id));
+  }
+
+  await db.delete(calendarEvents).where(eq(calendarEvents.id, calendarEventId));
+}

@@ -13,7 +13,7 @@ import {
 
 import { db } from '../../src/db';
 import { calendarEvents } from '../../src/db/schema';
-import { getExistingSession, startWorkoutSession } from '../../src/db/session';
+import { deleteCalendarEventCascade, getExistingSession, startWorkoutSession } from '../../src/db/session';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -114,7 +114,7 @@ export default function CalendrierScreen() {
       {
         text: 'Supprimer', style: 'destructive',
         onPress: async () => {
-          await db.delete(calendarEvents).where(eq(calendarEvents.id, ev.id));
+          await deleteCalendarEventCascade(ev.id);
           setOpenMenu(null);
           load();
         },
