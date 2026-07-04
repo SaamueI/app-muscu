@@ -86,7 +86,7 @@ scripts/
 
 Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.created_at`. Un `when` trop petit = migration silencieusement ignorée.
 
-**Prochain `when` disponible** : > `1782700000000` (dernière migration : 0010).
+**Prochain `when` disponible** : > `1782700001000` (dernière migration : 0011).
 
 ### Schéma (résumé)
 
@@ -117,6 +117,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 - Unités : stockées en kg dans la DB, affichées converties selon `exercises.weightUnit` (ou fallback `user_settings.weightUnit`)
 - Supersets : `supersetGroupId` UUID partagé entre les exercices du même superset (sur `program_exercises`, `meso_exercises`, `exercise_logs`)
 - Unilatéral : deux `set_logs` par set logique, `side = 'L'` et `'R'`, même `setNumber`
+- `calendarEvents.refId` (sans FK, par design) pointe soit vers un `program_session`, soit vers un `meso_session` ; `refType` (`'program_session'|'meso_session'`, migration 0011) désambiguïse — voir section Ancrage calendaire
 
 ### Migrations appliquées
 
@@ -133,6 +134,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0008 | tempo_text | Rebuild meso_sets : tempo integer → text |
 | 0009 | program_exercises_tempo_text | Rebuild program_exercises : tempo integer → text |
 | 0010 | workout_session_live | Colonnes séance live, tables rest_presets + user_settings, supersets, unités |
+| 0011 | meso_calendar_anchor | `calendar_events.ref_type` (+ backfill des lignes existantes) |
 
 ---
 
@@ -167,6 +169,24 @@ Export et import de **mésocycles** et **programmes** en `.xlsx` stylisé (`xlsx
 **Limite connue** : import non transactionnel (validation faite au parse, avant tout écrit).
 
 **Deps ajoutées** : `xlsx-js-style`, `expo-file-system`, `expo-document-picker`, `expo-sharing` ; dev : `tsx`.
+
+---
+
+## Ancrage calendaire des mésocycles (phase 9)
+
+Ancrer un mésocycle = choisir sa date de départ (`mesocycles.startDate`, lundi ISO de la semaine sélectionnée via `WeekPickerField`, écran `mesocycles/[id]/ancrer.tsx`). Ça génère des `calendar_events` pour chaque `meso_session` — **jamais** de `workout_sessions` à l'avance (celles-ci restent créées *lazily* par `startWorkoutSession()` quand l'utilisateur commence réellement une séance).
+
+**Fonctions clés** (`src/db/meso.ts`) :
+- `syncMesoCalendarEvents(mesocycleId)` — upsert idempotent par `(refType='meso_session', refId=mesoSessionId)`. N'écrase `title`/`date`/`week` que si l'event existant est `status='planned'` : un event déjà `completed`/`skipped` est un enregistrement historique figé (sinon une séance réalisée avant un ré-ancrage se retrouverait déplacée à la nouvelle date en gardant son statut « Terminé »). Branchée automatiquement en fin de `addWeek`/`duplicateWeek`/`deleteWeek`/`copyProgramSessionToMeso`/`addBlankMesoSession` et après modification d'une séance (day/title), donc toujours à jour sans action manuelle — à condition que `mesocycle.startDate` soit renseigné (no-op sinon).
+- `detachCalendarEventForMesoSession(mesoSessionId)` — supprime le calendar_event si jamais commencé (orphelin), ou le décorrèle (`refId`/`refType` → `null`, event conservé comme historique autonome) s'il a un `workout_session` lié. Indispensable : `syncMesoCalendarEvents` retrouve un event via `(refType, refId)`, donc un lien laissé intact bloquerait indéfiniment tout futur (ré)ancrage de cette séance.
+- `detachMesoSessionHistory(mesoSessionId)` — met à `null` `workoutSessions.mesoSessionId` et `exerciseLogs.mesoExerciseId` (FK sans cascade) pour permettre de supprimer une meso_session déjà exécutée sans violer de contrainte.
+- `deleteMesoSessionCascade` / `deleteMesocycleCascade` — enchaînent les deux détachements ci-dessus avant de supprimer (utilisées partout où on supprime une séance/semaine/mésocycle, à la place d'un `db.delete` direct).
+- `anchorMesocycle` / `unanchorMesocycle` — le désancrage détache complètement l'historique (mêmes fonctions que ci-dessus), pas seulement les events orphelins.
+- `duplicateMesocycle` — copie indépendante (nouveaux IDs), `startDate: null`, jamais ancrée automatiquement.
+
+**Suppression depuis le calendrier** (`src/db/session.ts` → `deleteCalendarEventCascade`) : supprime aussi le `workout_session` lié (cascade vers `exercise_logs`/`set_logs` via les FK du schéma), sinon la contrainte FK sur `workoutSessions.calendarEventId` bloque la suppression d'un event déjà réalisé.
+
+**Piège FK récurrent** : `workoutSessions.calendarEventId`/`mesoSessionId` et `exerciseLogs.mesoExerciseId` référencent leur parent **sans** `onDelete` (`ON DELETE NO ACTION`). Toute suppression côté template (meso_session, mesocycle) ou côté calendrier doit détacher/gérer ces FK explicitement — ne jamais faire de `db.delete` direct sur `mesoSessions`/`mesocycles`/`calendarEvents` s'il peut exister un historique lié.
 
 ---
 
@@ -206,13 +226,13 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 5 | Mésocycles (CRUD complet, semaines, objectifs par série, mémoire) | ✅ |
 | 6 | Séance live (timer, log sets, supersets, unités kg/lb, unilatéral) | ✅ |
 | 8 | Export / import XLSX des mésocycles et programmes | ✅ |
+| 9 | Ancrage calendaire des mésocycles | ✅ |
 
 ## Phases restantes
 
 | Phase | Contenu |
 |---|---|
 | 7 | Onglet Progression (graphiques, records) |
-| 9 | Ancrage calendaire des mésocycles |
 
 ---
 
