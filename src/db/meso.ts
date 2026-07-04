@@ -152,11 +152,19 @@ export async function syncMesoCalendarEvents(mesocycleId: string): Promise<void>
 
 // ─── Suppression cascade ────────────────────────────────────────────────────────
 // workoutSessions.calendarEventId est NOT NULL sans onDelete → supprimer un
-// calendar_event référencé par un workout_session lève une erreur FK. On ne
-// supprime donc que les calendar_events orphelins (séance jamais commencée),
-// préservant l'historique des séances déjà commencées/terminées.
-
-async function deleteCalendarEventForMesoSessionIfOrphan(mesoSessionId: string): Promise<void> {
+// calendar_event référencé par un workout_session lève une erreur FK.
+//
+// Détache le calendar_event d'une meso_session, quel que soit son état :
+// - Jamais commencée (pas de workout_session lié) : l'event est simplement
+//   supprimé, rien à préserver.
+// - Déjà commencée/terminée : l'event est CONSERVÉ (historique) mais
+//   décorrélé du mésocycle (`refId`/`refType` remis à null). C'est
+//   indispensable, pas seulement cosmétique : `syncMesoCalendarEvents`
+//   retrouve un event existant via (refType, refId) — si on laissait ce lien
+//   intact, un futur (ré)ancrage retomberait toujours sur cet event
+//   `completed`/`skipped` et l'ignorerait (cf. syncMesoCalendarEvents),
+//   empêchant la séance de réapparaître comme planifiée à sa nouvelle date.
+async function detachCalendarEventForMesoSession(mesoSessionId: string): Promise<void> {
   const [ev] = await db
     .select()
     .from(calendarEvents)
@@ -167,20 +175,26 @@ async function deleteCalendarEventForMesoSessionIfOrphan(mesoSessionId: string):
     .select()
     .from(workoutSessions)
     .where(eq(workoutSessions.calendarEventId, ev.id));
-  if (linkedSession) return;
 
-  await db.delete(calendarEvents).where(eq(calendarEvents.id, ev.id));
+  if (linkedSession) {
+    await db
+      .update(calendarEvents)
+      .set({ refId: null, refType: null })
+      .where(eq(calendarEvents.id, ev.id));
+  } else {
+    await db.delete(calendarEvents).where(eq(calendarEvents.id, ev.id));
+  }
 }
 
 // Détache l'historique d'exécution (workout_sessions + exercise_logs) d'une
-// meso_session avant sa suppression. `workoutSessions.mesoSessionId` et
-// `exerciseLogs.mesoExerciseId` référencent respectivement meso_sessions et
-// meso_exercises SANS onDelete (donc en ON DELETE NO ACTION) : si une séance a
-// déjà été commencée/terminée, supprimer directement la meso_session (et son
-// cascade vers meso_exercises) violerait ces FK. On les met à null pour
-// préserver l'historique réel (workout_sessions + logs, et leur calendar_event
-// resté intact via deleteCalendarEventForMesoSessionIfOrphan) tout en
-// permettant de supprimer le template.
+// meso_session. `workoutSessions.mesoSessionId` et `exerciseLogs.mesoExerciseId`
+// référencent respectivement meso_sessions et meso_exercises SANS onDelete
+// (donc en ON DELETE NO ACTION) : si une séance a déjà été commencée/terminée,
+// supprimer directement la meso_session (et son cascade vers meso_exercises)
+// violerait ces FK. On les met à null pour préserver l'historique réel
+// (workout_sessions + logs, et leur calendar_event traité séparément via
+// detachCalendarEventForMesoSession) tout en permettant de supprimer ou
+// désancrer le template sans erreur.
 async function detachMesoSessionHistory(mesoSessionId: string): Promise<void> {
   await db
     .update(workoutSessions)
@@ -200,18 +214,18 @@ async function detachMesoSessionHistory(mesoSessionId: string): Promise<void> {
   }
 }
 
-// Supprime une meso_session et son calendar_event orphelin associé.
+// Supprime une meso_session et détache/supprime son calendar_event associé.
 export async function deleteMesoSessionCascade(mesoSessionId: string): Promise<void> {
-  await deleteCalendarEventForMesoSessionIfOrphan(mesoSessionId);
+  await detachCalendarEventForMesoSession(mesoSessionId);
   await detachMesoSessionHistory(mesoSessionId);
   await db.delete(mesoSessions).where(eq(mesoSessions.id, mesoSessionId));
 }
 
-// Supprime un mésocycle entier : nettoie d'abord les calendar_events orphelins
-// et détache l'historique de toutes ses meso_sessions (AVANT de supprimer
-// mesocycles, car le cascade FK Drizzle onDelete:'cascade' supprime les
-// meso_sessions/meso_exercises en même temps que le mésocycle — il faut donc
-// nettoyer pendant qu'elles existent encore).
+// Supprime un mésocycle entier : détache/supprime d'abord les calendar_events
+// de toutes ses meso_sessions (AVANT de supprimer mesocycles, car le cascade
+// FK Drizzle onDelete:'cascade' supprime les meso_sessions/meso_exercises en
+// même temps que le mésocycle — il faut donc nettoyer pendant qu'elles
+// existent encore).
 export async function deleteMesocycleCascade(mesocycleId: string): Promise<void> {
   const sessions = await db
     .select()
@@ -219,7 +233,7 @@ export async function deleteMesocycleCascade(mesocycleId: string): Promise<void>
     .where(eq(mesoSessions.mesocycleId, mesocycleId));
 
   for (const s of sessions) {
-    await deleteCalendarEventForMesoSessionIfOrphan(s.id);
+    await detachCalendarEventForMesoSession(s.id);
     await detachMesoSessionHistory(s.id);
   }
 
@@ -235,8 +249,12 @@ export async function anchorMesocycle(mesocycleId: string, startDate: string): P
   await syncMesoCalendarEvents(mesocycleId);
 }
 
-// Désancre un mésocycle : startDate = null, supprime les calendar_events générés
-// non commencés. Les séances déjà commencées/terminées gardent leur event intact.
+// Désancre un mésocycle : startDate = null. Les calendar_events générés non
+// commencés sont supprimés. Les séances déjà commencées/terminées sont
+// entièrement décorrélées du mésocycle (calendar_event conservé mais
+// refId/refType remis à null, workout_session détaché) : ce sont désormais
+// des enregistrements historiques indépendants, qui ne bloqueront plus un
+// futur (ré)ancrage de la même meso_session (voir detachCalendarEventForMesoSession).
 export async function unanchorMesocycle(mesocycleId: string): Promise<void> {
   const sessions = await db
     .select()
@@ -244,7 +262,8 @@ export async function unanchorMesocycle(mesocycleId: string): Promise<void> {
     .where(eq(mesoSessions.mesocycleId, mesocycleId));
 
   for (const s of sessions) {
-    await deleteCalendarEventForMesoSessionIfOrphan(s.id);
+    await detachCalendarEventForMesoSession(s.id);
+    await detachMesoSessionHistory(s.id);
   }
 
   await db.update(mesocycles).set({ startDate: null }).where(eq(mesocycles.id, mesocycleId));
