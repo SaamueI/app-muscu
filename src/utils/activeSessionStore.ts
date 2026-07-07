@@ -12,6 +12,8 @@ type ActiveSession = {
   activeExerciseLogId: string | null;
   lastRestPresets: Record<string, number>;
   lastExecutionSeconds: number | null;
+  restForExerciseName: string | null;
+  bannerDismissed: boolean;
 };
 
 const DEFAULT: ActiveSession = {
@@ -26,6 +28,8 @@ const DEFAULT: ActiveSession = {
   activeExerciseLogId: null,
   lastRestPresets: {},
   lastExecutionSeconds: null,
+  restForExerciseName: null,
+  bannerDismissed: false,
 };
 
 let state: ActiveSession = { ...DEFAULT };

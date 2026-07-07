@@ -12,8 +12,8 @@ import {
 
 import { db } from '../../src/db';
 import { calendarEvents, workoutSessions } from '../../src/db/schema';
-import { deleteCalendarEventCascade, getExistingSession, startWorkoutSession } from '../../src/db/session';
-import { STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
+import { deleteCalendarEventCascade, finishSession, getExistingSession, startWorkoutSession } from '../../src/db/session';
+import { getEffectiveStatus, STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -68,6 +68,22 @@ export default function JourDetailScreen() {
     router.push(`/seance/${sessionId}` as any);
   };
 
+  const handleFinishEvent = (ev: CalendarEvent) => {
+    const sessionId = sessionIdByEvent[ev.id];
+    if (!sessionId) return;
+    Alert.alert('Terminer la séance', 'Confirmer la fin de la séance ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Terminer', style: 'destructive',
+        onPress: async () => {
+          await finishSession(sessionId);
+          setOpenMenu(null);
+          load();
+        },
+      },
+    ]);
+  };
+
   const deleteEvent = (ev: CalendarEvent) => {
     Alert.alert('Supprimer', `Supprimer "${ev.title || 'cet événement'}" ?`, [
       { text: 'Annuler', style: 'cancel' },
@@ -94,22 +110,25 @@ export default function JourDetailScreen() {
           </View>
         ) : (
           <View style={styles.section}>
-            {events.map((ev) => (
+            {events.map((ev) => {
+              const hasSession = !!sessionIdByEvent[ev.id];
+              const effectiveStatus = getEffectiveStatus(ev.status, hasSession);
+              return (
               <View key={ev.id}>
                 <Pressable
                   style={styles.eventRow}
                   onPress={() => setOpenMenu(openMenu === ev.id ? null : ev.id)}
                 >
-                  <View style={[styles.dot, { backgroundColor: STATUS_COLORS[ev.status] }]} />
+                  <View style={[styles.dot, { backgroundColor: STATUS_COLORS[effectiveStatus] }]} />
                   <View style={styles.eventInfo}>
                     <Text style={styles.eventTitle}>{ev.title || '(sans titre)'}</Text>
                     {ev.description ? (
                       <Text style={styles.eventDesc} numberOfLines={1}>{ev.description}</Text>
                     ) : null}
                   </View>
-                  <View style={[styles.badge, { backgroundColor: STATUS_COLORS[ev.status] + '22' }]}>
-                    <Text style={[styles.badgeText, { color: STATUS_COLORS[ev.status] }]}>
-                      {STATUS_LABELS[ev.status]}
+                  <View style={[styles.badge, { backgroundColor: STATUS_COLORS[effectiveStatus] + '22' }]}>
+                    <Text style={[styles.badgeText, { color: STATUS_COLORS[effectiveStatus] }]}>
+                      {STATUS_LABELS[effectiveStatus]}
                     </Text>
                   </View>
                   <Text style={styles.menuDots}>⋮</Text>
@@ -120,8 +139,16 @@ export default function JourDetailScreen() {
                       <>
                         <Pressable style={styles.actionItem} onPress={() => handleStart(ev)}>
                           <Text style={[styles.actionText, styles.actionTextBlue]}>
-                            {ev.status === 'planned' ? 'Commencer la séance' : 'Reprendre la séance'}
+                            {hasSession ? 'Poursuivre la séance' : 'Commencer la séance'}
                           </Text>
+                        </Pressable>
+                        <View style={styles.actionDivider} />
+                      </>
+                    )}
+                    {ev.type === 'workout_session' && ev.status !== 'completed' && hasSession && (
+                      <>
+                        <Pressable style={styles.actionItem} onPress={() => handleFinishEvent(ev)}>
+                          <Text style={[styles.actionText, styles.actionTextRed]}>Terminer la séance</Text>
                         </Pressable>
                         <View style={styles.actionDivider} />
                       </>
@@ -150,7 +177,8 @@ export default function JourDetailScreen() {
                   </View>
                 )}
               </View>
-            ))}
+              );
+            })}
           </View>
         )}
       </ScrollView>

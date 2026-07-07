@@ -22,6 +22,8 @@ import {
 } from '../../src/db/session';
 import { formatTargets } from '../../src/utils/formatTargets';
 import ExercisePicker from '../../src/components/ExercisePicker';
+import GlobalRestBanner from '../../src/components/GlobalRestBanner';
+import { getActiveSession, setActiveSession } from '../../src/utils/activeSessionStore';
 
 export default function LiveSessionScreen() {
   useKeepAwake();
@@ -36,6 +38,11 @@ export default function LiveSessionScreen() {
     if (!sessionId) return;
     const d = await getSessionLive(sessionId);
     setData(d);
+
+    const s = getActiveSession();
+    if (s.sessionId !== sessionId) {
+      setActiveSession({ sessionId, bannerDismissed: false });
+    }
   }, [sessionId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -75,18 +82,24 @@ export default function LiveSessionScreen() {
     return groups;
   }
 
+  const doFinish = async () => {
+    if (!sessionId) return;
+    await finishSession(sessionId);
+    router.back();
+  };
+
   const handleFinish = () => {
     Alert.alert('Terminer la séance', 'Confirmer la fin de la séance ?', [
       { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Terminer',
-        style: 'destructive',
-        onPress: async () => {
-          if (!sessionId) return;
-          await finishSession(sessionId);
-          router.back();
-        },
-      },
+      { text: 'Terminer', style: 'destructive', onPress: doFinish },
+    ]);
+  };
+
+  const handleBackPress = () => {
+    Alert.alert('Quitter la séance', undefined, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Interrompre', onPress: () => router.back() },
+      { text: 'Clôturer', style: 'destructive', onPress: doFinish },
     ]);
   };
 
@@ -172,6 +185,9 @@ export default function LiveSessionScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={handleBackPress} hitSlop={8}>
+          <Text style={styles.backIcon}>‹</Text>
+        </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {session.programSessionId || session.mesoSessionId ? 'Séance en cours' : 'Séance libre'}
         </Text>
@@ -179,6 +195,8 @@ export default function LiveSessionScreen() {
           <Text style={styles.finishText}>Terminer</Text>
         </Pressable>
       </View>
+
+      <GlobalRestBanner />
 
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* À faire */}
@@ -254,6 +272,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#C6C6C8',
+  },
+  backButton: {
+    paddingRight: 12,
+    paddingVertical: 2,
+  },
+  backIcon: {
+    fontSize: 30,
+    fontWeight: '400',
+    color: '#007AFF',
   },
   headerTitle: {
     fontSize: 17,
