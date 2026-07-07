@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import GlobalRestBanner from '../../../src/components/GlobalRestBanner';
 import RestPresetPicker from '../../../src/components/RestPresetPicker';
 import SetPerformanceModal from '../../../src/components/SetPerformanceModal';
 import TimerDisplay from '../../../src/components/TimerDisplay';
@@ -54,6 +55,12 @@ export default function ExerciceDetailLiveScreen() {
   const [editingSetLog, setEditingSetLog] = useState<SetLogRow | null>(null);
   const autoFiredRef = useRef(false);
 
+  // État local : ce que propose cet écran tant qu'il ne possède pas le timer
+  // global (utilisé seulement quand cet exercice n'est pas l'exercice actif).
+  const [localNextSetNumber, setLocalNextSetNumber] = useState(1);
+  const [localIsUnilateral, setLocalIsUnilateral] = useState(false);
+  const [localCurrentSide, setLocalCurrentSide] = useState<'L' | 'R' | null>(null);
+
   // ─── Chargement initial ───────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -69,7 +76,7 @@ export default function ExerciceDetailLiveScreen() {
     const found = liveData?.exerciseLogs.find((el) => el.log.id === logId) ?? null;
     setEnriched(found);
 
-    const perfs = await getPreviousPerfs(logRow.log.exerciseId);
+    const perfs = await getPreviousPerfs(logRow.log.exerciseId, 5, logRow.log.workoutSessionId);
     setHistory(perfs);
 
     const ps = await getRestPresets();
@@ -79,18 +86,7 @@ export default function ExerciceDetailLiveScreen() {
     const exUnit = logRow.exercise.weightUnit as 'kg' | 'lb' | null;
     setWeightUnit(exUnit ?? userUnit);
 
-    const s = getActiveSession();
-    if (s.activeExerciseLogId !== logId) {
-      setActiveSession({
-        activeExerciseLogId: logId,
-        timerPhase: 'idle',
-        timerStartedAt: 0,
-        currentSetNumber: (liveData?.exerciseLogs.find((el) => el.log.id === logId)?.setLogs.length ?? 0) + 1,
-        isUnilateral: false,
-        currentSide: null,
-        lastExecutionSeconds: null,
-      });
-    }
+    setLocalNextSetNumber((found?.setLogs.length ?? 0) + 1);
   }, [logId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -117,7 +113,7 @@ export default function ExerciceDetailLiveScreen() {
           setActiveSession({
             timerPhase: 'execution',
             timerStartedAt: Date.now(),
-            timerTargetSeconds: getTargetExecutionSeconds(),
+            timerTargetSeconds: getTargetExecutionSeconds(s.currentSetNumber),
           });
         }
       }
@@ -127,10 +123,9 @@ export default function ExerciceDetailLiveScreen() {
 
   // ─── Helpers d'objectifs ──────────────────────────────────────────────────
 
-  function getTargetRestSeconds(): number | null {
+  function getTargetRestSeconds(setNumber: number): number | null {
     if (!enriched) return null;
-    const s = getActiveSession();
-    const setIdx = s.currentSetNumber - 1;
+    const setIdx = setNumber - 1;
     if (enriched.mesoSets.length > 0) {
       const ms = enriched.mesoSets[setIdx] ?? enriched.mesoSets[enriched.mesoSets.length - 1];
       return ms.targetRestSeconds ?? null;
@@ -138,10 +133,9 @@ export default function ExerciceDetailLiveScreen() {
     return enriched.programExercise?.targetRestSeconds ?? null;
   }
 
-  function getTargetExecutionSeconds(): number | null {
+  function getTargetExecutionSeconds(setNumber: number): number | null {
     if (!enriched) return null;
-    const s = getActiveSession();
-    const setIdx = s.currentSetNumber - 1;
+    const setIdx = setNumber - 1;
     if (enriched.mesoSets.length > 0) {
       const ms = enriched.mesoSets[setIdx] ?? enriched.mesoSets[enriched.mesoSets.length - 1];
       return ms.targetDurationSeconds ?? null;
@@ -149,25 +143,61 @@ export default function ExerciceDetailLiveScreen() {
     return enriched.programExercise?.targetDurationSeconds ?? null;
   }
 
-  function getCurrentMesoSet() {
+  function getCurrentMesoSet(setNumber: number) {
     if (!enriched) return null;
-    const s = getActiveSession();
-    const idx = s.currentSetNumber - 1;
+    const idx = setNumber - 1;
     if (enriched.mesoSets.length > 0) {
       return enriched.mesoSets[idx] ?? enriched.mesoSets[enriched.mesoSets.length - 1];
     }
     return null;
   }
 
+  function getPrefillFromHistory(
+    setNumber: number,
+    side: 'L' | 'R' | null,
+    isUnilateral: boolean
+  ): SetLogRow | null {
+    const last = history[0];
+    if (!last || last.sets.length === 0) return null;
+    const sideFilter = (sl: SetLogRow) =>
+      isUnilateral ? sl.side === side : sl.side == null || sl.side === side;
+    const candidates = last.sets.filter(sideFilter);
+    if (candidates.length === 0) return null;
+    const sameSetNumber = candidates.find((sl) => sl.setNumber === setNumber);
+    if (sameSetNumber) return sameSetNumber;
+    return candidates[candidates.length - 1];
+  }
+
+  // Série précédente de LA SÉANCE EN COURS (priorité sur l'historique des
+  // séances passées, pour les séries après la première).
+  function getPrefillFromCurrentSession(
+    setNumber: number,
+    side: 'L' | 'R' | null,
+    isUnilateral: boolean
+  ): SetLogRow | null {
+    if (!enriched || setNumber <= 1) return null;
+    const sideFilter = (sl: SetLogRow) =>
+      isUnilateral ? sl.side === side : sl.side == null || sl.side === side;
+    return enriched.setLogs.find((sl) => sl.setNumber === setNumber - 1 && sideFilter(sl)) ?? null;
+  }
+
   // ─── Actions timer ────────────────────────────────────────────────────────
 
   const handleCommencer = () => {
     const s = getActiveSession();
+    const wasActive = s.activeExerciseLogId === logId;
+    const unilateral = wasActive ? s.isUnilateral : localIsUnilateral;
+    const side = unilateral ? (wasActive ? (s.currentSide ?? 'L') : (localCurrentSide ?? 'L')) : null;
+    const setNumber = wasActive ? s.currentSetNumber : localNextSetNumber;
+
     setActiveSession({
+      activeExerciseLogId: logId,
       timerPhase: 'execution',
       timerStartedAt: Date.now(),
-      timerTargetSeconds: getTargetExecutionSeconds(),
-      currentSide: s.isUnilateral ? (s.currentSide ?? 'L') : null,
+      timerTargetSeconds: getTargetExecutionSeconds(setNumber),
+      isUnilateral: unilateral,
+      currentSide: side,
+      currentSetNumber: setNumber,
     });
     autoFiredRef.current = false;
   };
@@ -175,7 +205,7 @@ export default function ExerciceDetailLiveScreen() {
   const handleTerminer = () => {
     const s = getActiveSession();
     const executionSeconds = Math.floor((Date.now() - s.timerStartedAt) / 1000);
-    const targetRest = getTargetRestSeconds();
+    const targetRest = getTargetRestSeconds(s.currentSetNumber);
     const lastPreset = s.lastRestPresets[logId] ?? null;
     const restTarget = targetRest ?? lastPreset;
 
@@ -184,6 +214,7 @@ export default function ExerciceDetailLiveScreen() {
       timerStartedAt: Date.now(),
       timerTargetSeconds: restTarget,
       lastExecutionSeconds: executionSeconds,
+      restForExerciseName: enriched?.exercise.name ?? null,
     });
     autoFiredRef.current = false;
     setModalVisible(true);
@@ -192,11 +223,21 @@ export default function ExerciceDetailLiveScreen() {
   const handleSelectPreset = (seconds: number) => {
     if (!logId) return;
     const s = getActiveSession();
+    const wasActive = s.activeExerciseLogId === logId;
+    const unilateral = wasActive ? s.isUnilateral : localIsUnilateral;
+    const side = unilateral ? (wasActive ? (s.currentSide ?? 'L') : (localCurrentSide ?? 'L')) : null;
+    const setNumber = wasActive ? s.currentSetNumber : localNextSetNumber;
+
     setActiveSession({
+      activeExerciseLogId: logId,
       timerPhase: 'rest',
-      timerStartedAt: s.timerPhase === 'rest' ? s.timerStartedAt : Date.now(),
+      timerStartedAt: wasActive && s.timerPhase === 'rest' ? s.timerStartedAt : Date.now(),
       timerTargetSeconds: seconds,
       lastRestPresets: { ...s.lastRestPresets, [logId]: seconds },
+      restForExerciseName: enriched?.exercise.name ?? null,
+      isUnilateral: unilateral,
+      currentSide: side,
+      currentSetNumber: setNumber,
     });
     autoFiredRef.current = false;
   };
@@ -223,11 +264,12 @@ export default function ExerciceDetailLiveScreen() {
           timerStartedAt: s.timerStartedAt,
           timerTargetSeconds: s.timerTargetSeconds,
           currentSide: 'R',
+          restForExerciseName: enriched?.exercise.name ?? null,
         });
         autoFiredRef.current = false;
       } else {
         // R sauvé → nouvelle série, retour à L, démarrer un nouveau repos
-        const newRestTarget = getTargetRestSeconds() ?? (s.lastRestPresets[logId] ?? null);
+        const newRestTarget = getTargetRestSeconds(s.currentSetNumber) ?? (s.lastRestPresets[logId] ?? null);
         setActiveSession({
           timerPhase: 'rest',
           timerStartedAt: Date.now(),
@@ -235,6 +277,7 @@ export default function ExerciceDetailLiveScreen() {
           currentSetNumber: s.currentSetNumber + 1,
           currentSide: 'L',
           lastExecutionSeconds: null,
+          restForExerciseName: enriched?.exercise.name ?? null,
         });
         autoFiredRef.current = false;
       }
@@ -246,6 +289,7 @@ export default function ExerciceDetailLiveScreen() {
         timerTargetSeconds: s.timerTargetSeconds,
         currentSetNumber: s.currentSetNumber + 1,
         lastExecutionSeconds: null,
+        restForExerciseName: enriched?.exercise.name ?? null,
       });
       autoFiredRef.current = false;
     }
@@ -286,7 +330,11 @@ export default function ExerciceDetailLiveScreen() {
             }
             await deleteSetLog(sl.id);
             const s = getActiveSession();
-            setActiveSession({ currentSetNumber: Math.max(1, s.currentSetNumber - 1) });
+            if (s.activeExerciseLogId === logId) {
+              setActiveSession({ currentSetNumber: Math.max(1, s.currentSetNumber - 1) });
+            } else {
+              setLocalNextSetNumber((n) => Math.max(1, n - 1));
+            }
             load();
           },
         },
@@ -299,7 +347,10 @@ export default function ExerciceDetailLiveScreen() {
   const s = getActiveSession();
   const isActive = s.activeExerciseLogId === logId;
   const phase = isActive ? s.timerPhase : 'idle';
-  const targetRestSec = getTargetRestSeconds();
+  const effIsUnilateral = isActive ? s.isUnilateral : localIsUnilateral;
+  const effCurrentSide = effIsUnilateral ? (isActive ? s.currentSide : localCurrentSide) : null;
+  const effSetNumber = isActive ? s.currentSetNumber : localNextSetNumber;
+  const targetRestSec = getTargetRestSeconds(effSetNumber);
   const hasRestTarget = targetRestSec != null;
   const lastUsedPreset = s.lastRestPresets[logId] ?? null;
 
@@ -311,24 +362,31 @@ export default function ExerciceDetailLiveScreen() {
     );
   }
 
-  const mesoSet = getCurrentMesoSet();
+  const isEditing = editingSetLog != null;
+  const mesoSet = getCurrentMesoSet(effSetNumber);
+  const histSet = isEditing
+    ? null
+    : getPrefillFromCurrentSession(effSetNumber, effCurrentSide, effIsUnilateral) ??
+      getPrefillFromHistory(effSetNumber, effCurrentSide, effIsUnilateral);
   const prefillWeightKg =
+    histSet?.weight ??
     mesoSet?.targetWeightMin ?? mesoSet?.targetWeightMax ??
     enriched.programExercise?.targetWeightMin ?? enriched.programExercise?.targetWeightMax ?? null;
   const prefillReps =
+    histSet?.reps ??
     mesoSet?.targetRepsMin ?? mesoSet?.targetRepsMax ??
     enriched.programExercise?.targetRepsMin ?? enriched.programExercise?.targetRepsMax ?? null;
   const prefillRir =
+    histSet?.rir ??
     mesoSet?.targetRirMin ?? mesoSet?.targetRirMax ??
     enriched.programExercise?.targetRirMin ?? enriched.programExercise?.targetRirMax ?? null;
 
-  const isEditing = editingSetLog != null;
-  const modalKey = isEditing ? `edit-${editingSetLog!.id}` : `new-${s.currentSetNumber}`;
+  const modalKey = isEditing ? `edit-${editingSetLog!.id}` : `new-${s.currentSetNumber}-${s.currentSide ?? ''}`;
   const modalPrefillWeightKg = isEditing ? editingSetLog!.weight : prefillWeightKg;
   const modalPrefillReps = isEditing ? editingSetLog!.reps : prefillReps;
   const modalPrefillRir = isEditing ? editingSetLog!.rir : prefillRir;
-  const modalPrefillPartialReps = isEditing ? editingSetLog!.partialReps : null;
-  const modalPrefillPdc = isEditing ? (editingSetLog!.pdc ?? false) : false;
+  const modalPrefillPartialReps = isEditing ? editingSetLog!.partialReps : (histSet?.partialReps ?? null);
+  const modalPrefillPdc = isEditing ? (editingSetLog!.pdc ?? false) : (histSet?.pdc ?? false);
   const modalSetNumber = isEditing ? (editingSetLog!.setNumber ?? s.currentSetNumber) : s.currentSetNumber;
   const modalSide = isEditing ? (editingSetLog!.side as 'L' | 'R' | null) : s.currentSide;
 
@@ -337,6 +395,7 @@ export default function ExerciceDetailLiveScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <GlobalRestBanner excludeLogId={logId} />
       <ScrollView contentContainerStyle={styles.scroll}>
 
         {/* ── Objectifs ── */}
@@ -377,15 +436,20 @@ export default function ExerciceDetailLiveScreen() {
                 ? `Série ${s.currentSetNumber}${sideLabel(s.currentSide)} en cours`
                 : phase === 'rest'
                 ? `Repos · série ${s.currentSetNumber}${sideLabel(s.currentSide)} à venir`
-                : `Série ${s.currentSetNumber}${sideLabel(s.isUnilateral ? s.currentSide : null)}`}
+                : `Série ${effSetNumber}${sideLabel(effIsUnilateral ? effCurrentSide : null)}`}
             </Text>
             <View style={styles.unilateralRow}>
               <Text style={styles.smallLabel}>Unilatéral</Text>
               <Switch
-                value={s.isUnilateral}
-                onValueChange={(v) =>
-                  setActiveSession({ isUnilateral: v, currentSide: v ? 'L' : null })
-                }
+                value={effIsUnilateral}
+                onValueChange={(v) => {
+                  if (isActive) {
+                    setActiveSession({ isUnilateral: v, currentSide: v ? 'L' : null });
+                  } else {
+                    setLocalIsUnilateral(v);
+                    setLocalCurrentSide(v ? 'L' : null);
+                  }
+                }}
                 trackColor={{ true: '#007AFF' }}
               />
             </View>
@@ -443,7 +507,7 @@ export default function ExerciceDetailLiveScreen() {
             {phase === 'idle' && (
               <Pressable style={styles.primaryBtn} onPress={handleCommencer}>
                 <Text style={styles.primaryBtnText}>
-                  Commencer série{sideLabel(s.isUnilateral ? s.currentSide : null)}
+                  Commencer série{sideLabel(effIsUnilateral ? effCurrentSide : null)}
                 </Text>
               </Pressable>
             )}
@@ -466,7 +530,6 @@ export default function ExerciceDetailLiveScreen() {
                   style={[styles.primaryBtn, styles.doneBtn]}
                   onPress={async () => {
                     await markExerciseDone(logId!, true);
-                    setActiveSession({ timerPhase: 'idle' });
                     router.back();
                   }}
                 >

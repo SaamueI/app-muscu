@@ -10,6 +10,7 @@ import {
   mesoSets,
   programExercises,
   programSessions,
+  setLogs,
   targetMemory,
   workoutSessions,
   type MemorizedSet,
@@ -164,6 +165,18 @@ export async function syncMesoCalendarEvents(mesocycleId: string): Promise<void>
 //   intact, un futur (ré)ancrage retomberait toujours sur cet event
 //   `completed`/`skipped` et l'ignorerait (cf. syncMesoCalendarEvents),
 //   empêchant la séance de réapparaître comme planifiée à sa nouvelle date.
+// Vrai si au moins une série a été loggée dans cette séance (sinon elle a
+// été démarrée par erreur/testée puis jamais réellement pratiquée).
+async function hasLoggedSets(workoutSessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: setLogs.id })
+    .from(setLogs)
+    .innerJoin(exerciseLogs, eq(setLogs.exerciseLogId, exerciseLogs.id))
+    .where(eq(exerciseLogs.workoutSessionId, workoutSessionId))
+    .limit(1);
+  return !!row;
+}
+
 async function detachCalendarEventForMesoSession(mesoSessionId: string): Promise<void> {
   const [ev] = await db
     .select()
@@ -177,10 +190,19 @@ async function detachCalendarEventForMesoSession(mesoSessionId: string): Promise
     .where(eq(workoutSessions.calendarEventId, ev.id));
 
   if (linkedSession) {
-    await db
-      .update(calendarEvents)
-      .set({ refId: null, refType: null })
-      .where(eq(calendarEvents.id, ev.id));
+    const hasRealData = linkedSession.finishedAt != null || (await hasLoggedSets(linkedSession.id));
+    if (hasRealData) {
+      await db
+        .update(calendarEvents)
+        .set({ refId: null, refType: null })
+        .where(eq(calendarEvents.id, ev.id));
+    } else {
+      // Séance démarrée mais jamais pratiquée (aucune série loggée, pas
+      // terminée) : rien à préserver, on nettoie pour éviter d'accumuler
+      // des events fantômes affichés "En cours" à chaque (ré)ancrage.
+      await db.delete(workoutSessions).where(eq(workoutSessions.id, linkedSession.id));
+      await db.delete(calendarEvents).where(eq(calendarEvents.id, ev.id));
+    }
   } else {
     await db.delete(calendarEvents).where(eq(calendarEvents.id, ev.id));
   }

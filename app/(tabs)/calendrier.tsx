@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, like } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, like } from 'drizzle-orm';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useLayoutEffect, useState } from 'react';
 import {
@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 
 import { db } from '../../src/db';
-import { calendarEvents } from '../../src/db/schema';
+import { calendarEvents, workoutSessions } from '../../src/db/schema';
 import { deleteCalendarEventCascade, getExistingSession, startWorkoutSession } from '../../src/db/session';
+import { getEffectiveStatus, STATUS_COLORS } from '../../src/utils/eventStatus';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -40,12 +41,6 @@ function isoWeekLabel(week: string): string {
   return `Semaine ${w} · ${fmt(monday)} – ${fmt(sunday)}`;
 }
 
-function eventDotColor(ev: CalendarEvent): string {
-  if (ev.status === 'completed') return '#34C759';
-  if (ev.status === 'skipped') return '#8E8E93';
-  return '#007AFF';
-}
-
 export default function CalendrierScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -55,6 +50,10 @@ export default function CalendrierScreen() {
   const [eventsByDate, setEventsByDate] = useState<Record<string, CalendarEvent[]>>({});
   const [weekEvents, setWeekEvents] = useState<CalendarEvent[]>([]);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [sessionIdByEvent, setSessionIdByEvent] = useState<Record<string, string>>({});
+
+  const eventDotColor = (ev: CalendarEvent): string =>
+    STATUS_COLORS[getEffectiveStatus(ev.status, !!sessionIdByEvent[ev.id])];
 
   const load = useCallback(async () => {
     const prefix = `${year}-${pad(month + 1)}`;
@@ -76,6 +75,21 @@ export default function CalendrierScreen() {
       .from(calendarEvents)
       .where(and(isNull(calendarEvents.date), isNotNull(calendarEvents.week)));
     setWeekEvents(undated);
+
+    const sessionEventIds = [...dated, ...undated]
+      .filter((r) => r.type === 'workout_session')
+      .map((r) => r.id);
+    if (sessionEventIds.length > 0) {
+      const sessions = await db
+        .select()
+        .from(workoutSessions)
+        .where(inArray(workoutSessions.calendarEventId, sessionEventIds));
+      const map: Record<string, string> = {};
+      for (const s of sessions) map[s.calendarEventId] = s.id;
+      setSessionIdByEvent(map);
+    } else {
+      setSessionIdByEvent({});
+    }
   }, [year, month]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -221,7 +235,7 @@ export default function CalendrierScreen() {
                         <>
                           <Pressable style={styles.actionItem} onPress={() => handleStart(ev)}>
                             <Text style={[styles.actionText, styles.actionTextBlue]}>
-                              {ev.status === 'planned' ? 'Commencer la séance' : 'Reprendre la séance'}
+                              {sessionIdByEvent[ev.id] ? 'Poursuivre la séance' : 'Commencer la séance'}
                             </Text>
                           </Pressable>
                           <View style={styles.actionDivider} />

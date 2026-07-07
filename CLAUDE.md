@@ -51,12 +51,16 @@ src/
     SetPerformanceModal.tsx # Modal saisie performance (poids, reps, RIR…)
     DatePickerField.tsx     # Bouton → picker natif OS (date) ; props: value: Date|null, onChange
     WeekPickerField.tsx     # Calendrier inline react-native-calendars, sélection à la semaine ; props: value: string (ISO "YYYY-Www"), onChange
+    GlobalRestBanner.tsx    # Bandeau repos en cours (phase 11) ; prop excludeLogId
+    ActiveSessionBanner.tsx # Bandeau reprise séance globale (phase 11), déplaçable
   utils/
     generateId.ts
     altPickerStore.ts      # Store module-level pour passer un exo entre écrans
     mesoDeletePref.ts      # Flag "ne plus demander" suppression de séance
     activeSessionStore.ts  # Store éphémère timer en cours de séance
+    useSessionTimer.ts     # Hook useActiveSessionTick (tick 1s pour les bandeaux, phase 11)
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
+    eventStatus.ts         # Labels/couleurs statut event + getEffectiveStatus (déduit "en cours")
   export/                  # Phase 8 — export/import XLSX (voir section dédiée)
     core/                  # Sérialisation XLSX pure (testable sous Node)
       mesoXlsx.ts / programXlsx.ts    # build*/parse* d'un classeur
@@ -207,6 +211,24 @@ Ancrer un mésocycle = choisir sa date de départ (`mesocycles.startDate`, lundi
 
 ---
 
+## Séance live : améliorations (phase 11)
+
+Trois axes (doc source `docs/phase-11-seance-live-ameliorations.md`), plus deux ajustements suite aux retours de test sur device.
+
+**Préremplissage du modal** (`SetPerformanceModal` depuis `[logId].tsx`) : priorité à la série précédente de **la séance en cours** (`getPrefillFromCurrentSession`), puis à la même série (sinon la dernière) de la dernière séance **terminée** (`getPrefillFromHistory` / `getPreviousPerfs(exerciseId, limit, excludeSessionId)` — exclut la séance en cours et filtre `finishedAt` non nul), puis fallback objectifs (comportement historique inchangé).
+
+**Chrono de repos visible partout** : `GlobalRestBanner` (prop `excludeLogId`) monté sur l'écran séance et sur l'écran exercice ; store enrichi de `restForExerciseName`. Le chrono continue de tourner après « Terminer l'exercice ✓ » (plus de reset forcé à `idle`). Bandeau rouge si le temps est négatif (mode manuel).
+
+**Piège corrigé dans `[logId].tsx`** : `load()` réclamait auparavant `activeExerciseLogId` pour cet écran dès son ouverture, même sans avoir démarré de série — ce qui écrasait le timer d'un autre exercice réellement actif. Résolu par un état local (`localNextSetNumber`/`localIsUnilateral`/`localCurrentSide`) utilisé tant que l'écran n'est pas l'exercice actif (`isActive`) ; le store global n'est réclamé qu'au moment de `handleCommencer`/`handleSelectPreset`. Les fonctions d'objectifs (`getTargetRestSeconds`, `getCurrentMesoSet`, `getPrefillFromHistory`…) prennent le `setNumber`/`side` en paramètre explicite plutôt que de lire le store — ne pas revenir à un `getActiveSession()` implicite dans ces helpers.
+
+**Interruption de séance + bandeau de reprise** : bouton retour + `Alert` Clôturer/Interrompre/Annuler sur `[sessionId].tsx`. `ActiveSessionBanner` monté globalement (`app/_layout.tsx`, frère du `Stack`) : pilule flottante **déplaçable** (`PanResponder`, seuil de 3px pour distinguer tap et drag, position bornée à l'écran au relâchement) et semi-transparente (`rgba`), masquable (croix → `bannerDismissed`, remis à `false` au démarrage d'une nouvelle séance). `finishSession` appelle `resetActiveSession()` si c'est la séance active.
+
+**État « en cours » du calendrier** (déduit, PAS persisté — `calendar_events.status` reste `planned|completed|skipped`) : `getEffectiveStatus(status, hasActiveSession)` dans `eventStatus.ts` affiche « En cours » (orange `#FF9500`) quand un `workout_session` non terminé existe pour un event `planned`. Appliqué sur les deux vues calendrier (`calendrier/[date].tsx`, `(tabs)/calendrier.tsx`) et le badge de statut méso ancré (`mesocycles/[id].tsx`). Le libellé du bouton (« Commencer »/« Poursuivre ») se base sur l'existence réelle d'une séance, pas sur le statut DB seul. `calendrier/[date].tsx` propose aussi « Terminer la séance » dans le menu d'une séance en cours.
+
+**Bug de duplication corrigé** : le bouton de démarrage sur `mesocycles/[id]/sessions/[mesoSessionId].tsx` créait un nouveau `calendar_event` à chaque appui au lieu de réutiliser celui déjà synchronisé par l'ancrage (`syncMesoCalendarEvents`) → séances « en cours » fantômes qui s'accumulaient à chaque appui/ré-ancrage. Corrigé : réutilise l'event ancré s'il existe (résolution `mesoSessionId` déjà gérée par `startWorkoutSession({calendarEventId})`). Le bouton devient « Poursuivre cette séance » (orange) + « Terminer cette séance » (rouge) une fois une séance en cours détectée pour cette meso_session. En complément, `detachCalendarEventForMesoSession` (désancrage, `src/db/meso.ts`) supprime désormais les séances démarrées-mais-jamais-pratiquées (aucun `set_log`, via `hasLoggedSets`) au lieu de les préserver comme historique fantôme — l'historique réel (au moins une série loggée, ou séance terminée) reste conservé comme avant.
+
+---
+
 ## Patterns récurrents
 
 ### Rafraîchissement au focus
@@ -245,19 +267,19 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 8 | Export / import XLSX des mésocycles et programmes | ✅ |
 | 9 | Ancrage calendaire des mésocycles | ✅ |
 | 10 | Détails de séance : écran détail + mode édition des séries (ajout/suppression/réorganisation) + accès depuis calendrier + états/accès depuis méso ancré | ✅ |
+| 11 | Séance live : préremplissage par dernières perfs, chrono de repos visible partout, interruption de séance + bandeau de reprise déplaçable, état "en cours" du calendrier | ✅ |
 
 ## Phases restantes
 
-Chaque phase 11+ a un document d'implémentation détaillé dans `docs/` — **le lire en entier avant de commencer la phase**.
+Chaque phase 12+ a un document d'implémentation détaillé dans `docs/` — **le lire en entier avant de commencer la phase**.
 
 | Phase | Contenu | Doc |
 |---|---|---|
 | 7 | Onglet Progression (graphiques, records) | — |
-| 11 | Séance live : préremplissage par dernières perfs, chrono de repos visible partout, interruption de séance + bandeau de reprise global | `docs/phase-11-seance-live-ameliorations.md` |
 | 12 | Import : écrans dédiés, explication format + prompt LLM copiable, import CSV, templates téléchargeables | `docs/phase-12-import-dedie.md` |
 | 13 | Chrono en arrière-plan : notification Android chronometer (⚠️ requiert dev build, sortie d'Expo Go) | `docs/phase-13-chrono-arriere-plan.md` |
 
-Ordre recommandé : 11 → 12 → 13 (13 en dernier car elle change le workflow de build). La phase 7 est indépendante.
+Ordre recommandé : 12 → 13 (13 en dernier car elle change le workflow de build). La phase 7 est indépendante.
 
 ---
 

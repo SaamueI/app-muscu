@@ -9,6 +9,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { db } from '../src/db';
 import migrations from '../src/db/migrations/migrations';
 import { seedExercises } from '../src/db/seed';
+import ActiveSessionBanner from '../src/components/ActiveSessionBanner';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -96,6 +97,7 @@ function RootLayoutNav() {
         <Stack.Screen name="seance/exercice/[logId]" options={{ title: 'Exercice' }} />
         <Stack.Screen name="seance/presets-repos" options={{ title: 'Temps de repos', presentation: 'modal' }} />
       </Stack>
+      <ActiveSessionBanner />
     </ThemeProvider>
   );
 }

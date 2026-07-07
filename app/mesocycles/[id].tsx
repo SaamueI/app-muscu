@@ -5,10 +5,10 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { db } from '../../src/db';
 import { duplicateMesocycle } from '../../src/db/meso';
-import { calendarEvents, mesocycles, mesoSessions, programs } from '../../src/db/schema';
+import { calendarEvents, mesocycles, mesoSessions, programs, workoutSessions } from '../../src/db/schema';
 import { getExistingSession } from '../../src/db/session';
 import { exportMesocycle } from '../../src/export/actions';
-import { STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
+import { getEffectiveStatus, STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
 
 type Mesocycle = typeof mesocycles.$inferSelect;
 type MesoSession = typeof mesoSessions.$inferSelect;
@@ -28,6 +28,7 @@ export default function MesocycleDetailScreen() {
   const [exporting, setExporting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [eventsByMesoSession, setEventsByMesoSession] = useState<Record<string, CalendarEvent>>({});
+  const [sessionIdByEvent, setSessionIdByEvent] = useState<Record<string, string>>({});
 
   const onExport = async () => {
     if (!id || exporting) return;
@@ -72,8 +73,22 @@ export default function MesocycleDetailScreen() {
         if (ev.refId) map[ev.refId] = ev;
       }
       setEventsByMesoSession(map);
+
+      const eventIds = events.map((ev) => ev.id);
+      if (eventIds.length > 0) {
+        const wsRows = await db
+          .select()
+          .from(workoutSessions)
+          .where(inArray(workoutSessions.calendarEventId, eventIds));
+        const sessionMap: Record<string, string> = {};
+        for (const ws of wsRows) sessionMap[ws.calendarEventId] = ws.id;
+        setSessionIdByEvent(sessionMap);
+      } else {
+        setSessionIdByEvent({});
+      }
     } else {
       setEventsByMesoSession({});
+      setSessionIdByEvent({});
     }
   }, [id]);
 
@@ -151,13 +166,16 @@ export default function MesocycleDetailScreen() {
                       <View style={[styles.dot, { backgroundColor: s.color }]} />
                       <Text style={styles.sessionName}>{s.title || 'Séance'}</Text>
                       {s.day ? <Text style={styles.sessionDay}>{DAY_LABELS[s.day]}</Text> : null}
-                      {meso.startDate && ev && (
-                        <View style={[styles.badge, { backgroundColor: STATUS_COLORS[ev.status] + '22' }]}>
-                          <Text style={[styles.badgeText, { color: STATUS_COLORS[ev.status] }]}>
-                            {STATUS_LABELS[ev.status]}
-                          </Text>
-                        </View>
-                      )}
+                      {meso.startDate && ev && (() => {
+                        const effectiveStatus = getEffectiveStatus(ev.status, !!sessionIdByEvent[ev.id]);
+                        return (
+                          <View style={[styles.badge, { backgroundColor: STATUS_COLORS[effectiveStatus] + '22' }]}>
+                            <Text style={[styles.badgeText, { color: STATUS_COLORS[effectiveStatus] }]}>
+                              {STATUS_LABELS[effectiveStatus]}
+                            </Text>
+                          </View>
+                        );
+                      })()}
                       <Text style={styles.chevron}>›</Text>
                     </Pressable>
                   );

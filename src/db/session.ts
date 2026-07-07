@@ -1,4 +1,4 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, ne } from 'drizzle-orm';
 
 import { db } from './index';
 import {
@@ -16,6 +16,7 @@ import {
   workoutSessions,
 } from './schema';
 import { generateId } from '../utils/generateId';
+import { getActiveSession, resetActiveSession } from '../utils/activeSessionStore';
 
 // ─── Types exportés ───────────────────────────────────────────────────────────
 
@@ -339,6 +340,10 @@ export async function finishSession(sessionId: string): Promise<void> {
       .set({ status: 'completed' })
       .where(eq(calendarEvents.id, session.calendarEventId));
   }
+
+  if (getActiveSession().sessionId === sessionId) {
+    resetActiveSession();
+  }
 }
 
 // ─── Données live de la séance ────────────────────────────────────────────────
@@ -392,14 +397,18 @@ export async function getSessionLive(sessionId: string): Promise<SessionLiveData
 
 export async function getPreviousPerfs(
   exerciseId: string,
-  limit = 5
+  limit = 5,
+  excludeSessionId?: string
 ): Promise<PerfGroup[]> {
   // Récupère les IDs des N dernières séances terminées contenant cet exercice
+  const conditions = [eq(exerciseLogs.exerciseId, exerciseId), isNotNull(workoutSessions.finishedAt)];
+  if (excludeSessionId) conditions.push(ne(workoutSessions.id, excludeSessionId));
+
   const recentLogs = await db
     .select({ sessionId: workoutSessions.id, sessionDate: workoutSessions.date })
     .from(exerciseLogs)
     .innerJoin(workoutSessions, eq(exerciseLogs.workoutSessionId, workoutSessions.id))
-    .where(eq(exerciseLogs.exerciseId, exerciseId))
+    .where(and(...conditions))
     .orderBy(desc(workoutSessions.date));
 
   // Déduplication en JS : garder les N premières dates distinctes

@@ -1,16 +1,17 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '../../../../src/db';
-import { exercises, mesoExercises, mesoSessions, mesoSets } from '../../../../src/db/schema';
-import { startWorkoutSession } from '../../../../src/db/session';
+import { calendarEvents, exercises, mesoExercises, mesoSessions, mesoSets, workoutSessions } from '../../../../src/db/schema';
+import { finishSession, startWorkoutSession } from '../../../../src/db/session';
 import { generateId } from '../../../../src/utils/generateId';
 
 type MesoSession = typeof mesoSessions.$inferSelect;
 type Exercise = typeof exercises.$inferSelect;
 type MesoExercise = typeof mesoExercises.$inferSelect;
+type CalendarEvent = typeof calendarEvents.$inferSelect;
 
 type Row = { me: MesoExercise; exercise: Exercise; setCount: number };
 
@@ -27,6 +28,8 @@ export default function MesoSessionDetailScreen() {
   const [rows, setRows] = useState<Row[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [event, setEvent] = useState<CalendarEvent | null>(null);
+  const [inProgressSessionId, setInProgressSessionId] = useState<string | null>(null);
 
   const toggleSelect = (meId: string) => {
     setSelectedIds((prev) => {
@@ -69,6 +72,22 @@ export default function MesoSessionDetailScreen() {
       for (const st of sets) counts[st.mesoExerciseId] = (counts[st.mesoExerciseId] ?? 0) + 1;
     }
     setRows(exos.map((e) => ({ ...e, setCount: counts[e.me.id] ?? 0 })));
+
+    const [ev] = await db
+      .select()
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.refType, 'meso_session'), eq(calendarEvents.refId, mesoSessionId)));
+    setEvent(ev ?? null);
+
+    if (ev) {
+      const [ws] = await db
+        .select()
+        .from(workoutSessions)
+        .where(and(eq(workoutSessions.calendarEventId, ev.id), isNull(workoutSessions.finishedAt)));
+      setInProgressSessionId(ws?.id ?? null);
+    } else {
+      setInProgressSessionId(null);
+    }
   }, [mesoSessionId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -88,21 +107,53 @@ export default function MesoSessionDetailScreen() {
     load();
   };
 
+  const handleStart = async () => {
+    const sid = event
+      ? await startWorkoutSession({ calendarEventId: event.id })
+      : await startWorkoutSession({ mesoSessionId: mesoSessionId! });
+    router.push(`/seance/${sid}` as any);
+  };
+
+  const handleResume = () => {
+    if (!inProgressSessionId) return;
+    router.push(`/seance/${inProgressSessionId}` as any);
+  };
+
+  const handleFinish = () => {
+    if (!inProgressSessionId) return;
+    Alert.alert('Terminer la séance', 'Confirmer la fin de la séance ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Terminer',
+        style: 'destructive',
+        onPress: async () => {
+          await finishSession(inProgressSessionId);
+          load();
+        },
+      },
+    ]);
+  };
+
   if (!session) {
     return <View style={styles.center}><Text>Chargement…</Text></View>;
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Pressable
-        style={styles.startBtn}
-        onPress={async () => {
-          const sid = await startWorkoutSession({ mesoSessionId: mesoSessionId! });
-          router.push(`/seance/${sid}` as any);
-        }}
-      >
-        <Text style={styles.startBtnText}>▶ Commencer cette séance</Text>
-      </Pressable>
+      {inProgressSessionId ? (
+        <View style={styles.startBtnRow}>
+          <Pressable style={[styles.startBtn, styles.resumeBtn]} onPress={handleResume}>
+            <Text style={styles.startBtnText}>▶ Poursuivre cette séance</Text>
+          </Pressable>
+          <Pressable style={[styles.startBtn, styles.finishBtn]} onPress={handleFinish}>
+            <Text style={styles.startBtnText}>Terminer cette séance</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable style={styles.startBtn} onPress={handleStart}>
+          <Text style={styles.startBtnText}>▶ Commencer cette séance</Text>
+        </Pressable>
+      )}
 
       <View style={styles.header}>
         <Pressable
@@ -266,6 +317,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   startBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  startBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginHorizontal: 12,
+    marginTop: 16,
+  },
+  resumeBtn: { flex: 1, marginHorizontal: 0, marginTop: 0, backgroundColor: '#FF9500' },
+  finishBtn: { flex: 1, marginHorizontal: 0, marginTop: 0, backgroundColor: '#FF3B30' },
 
   exoRowSelected: { backgroundColor: '#EBF3FF' },
   supersetTag: { fontSize: 10, fontWeight: '700', color: '#FF9500', letterSpacing: 0.5 },
