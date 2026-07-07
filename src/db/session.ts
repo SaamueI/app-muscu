@@ -273,6 +273,50 @@ export async function deleteSetLog(id: string): Promise<void> {
   await db.delete(setLogs).where(eq(setLogs.id, id));
 }
 
+// ─── Renumérotation après suppression ────────────────────────────────────────
+// Après suppression de la série #N (et son partenaire L/R le cas échéant),
+// décale les séries suivantes (#N+1, #N+2, …) d'un cran pour combler le trou.
+
+export async function renumberSetsAfterDelete(
+  exerciseLogId: string,
+  deletedSetNumber: number
+): Promise<void> {
+  const rows = await db
+    .select()
+    .from(setLogs)
+    .where(eq(setLogs.exerciseLogId, exerciseLogId));
+
+  for (const row of rows) {
+    if (row.setNumber != null && row.setNumber > deletedSetNumber) {
+      await db.update(setLogs).set({ setNumber: row.setNumber - 1 }).where(eq(setLogs.id, row.id));
+    }
+  }
+}
+
+// ─── Réordonnancement manuel des séries ──────────────────────────────────────
+// Échange les set_logs de deux numéros de série (G+D compris pour l'unilatéral).
+
+export async function swapSetNumbers(
+  exerciseLogId: string,
+  setNumberA: number,
+  setNumberB: number
+): Promise<void> {
+  const rows = await db
+    .select()
+    .from(setLogs)
+    .where(eq(setLogs.exerciseLogId, exerciseLogId));
+
+  const aIds = rows.filter((r) => r.setNumber === setNumberA).map((r) => r.id);
+  const bIds = rows.filter((r) => r.setNumber === setNumberB).map((r) => r.id);
+
+  for (const id of aIds) {
+    await db.update(setLogs).set({ setNumber: setNumberB }).where(eq(setLogs.id, id));
+  }
+  for (const id of bIds) {
+    await db.update(setLogs).set({ setNumber: setNumberA }).where(eq(setLogs.id, id));
+  }
+}
+
 // ─── Marquer exercice fait / pas fait ────────────────────────────────────────
 
 export async function markExerciseDone(logId: string, isDone: boolean): Promise<void> {
