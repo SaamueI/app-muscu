@@ -1,4 +1,4 @@
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 
 import { db } from '../../src/db';
-import { calendarEvents } from '../../src/db/schema';
+import { calendarEvents, workoutSessions } from '../../src/db/schema';
 import { deleteCalendarEventCascade, getExistingSession, startWorkoutSession } from '../../src/db/session';
+import { STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -21,17 +22,6 @@ const MONTH_NAMES = [
   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
 ];
 const DAY_NAMES = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-
-const STATUS_LABELS: Record<string, string> = {
-  planned: 'Planifié',
-  completed: 'Terminé',
-  skipped: 'Annulé',
-};
-const STATUS_COLORS: Record<string, string> = {
-  planned: '#007AFF',
-  completed: '#34C759',
-  skipped: '#8E8E93',
-};
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -45,6 +35,7 @@ export default function JourDetailScreen() {
   const router = useRouter();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [sessionIdByEvent, setSessionIdByEvent] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!date) return;
@@ -53,6 +44,19 @@ export default function JourDetailScreen() {
       .from(calendarEvents)
       .where(eq(calendarEvents.date, date));
     setEvents(rows);
+
+    const sessionEventIds = rows.filter((r) => r.type === 'workout_session').map((r) => r.id);
+    if (sessionEventIds.length > 0) {
+      const sessions = await db
+        .select()
+        .from(workoutSessions)
+        .where(inArray(workoutSessions.calendarEventId, sessionEventIds));
+      const map: Record<string, string> = {};
+      for (const s of sessions) map[s.calendarEventId] = s.id;
+      setSessionIdByEvent(map);
+    } else {
+      setSessionIdByEvent({});
+    }
   }, [date]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -118,6 +122,17 @@ export default function JourDetailScreen() {
                           <Text style={[styles.actionText, styles.actionTextBlue]}>
                             {ev.status === 'planned' ? 'Commencer la séance' : 'Reprendre la séance'}
                           </Text>
+                        </Pressable>
+                        <View style={styles.actionDivider} />
+                      </>
+                    )}
+                    {ev.type === 'workout_session' && sessionIdByEvent[ev.id] && (
+                      <>
+                        <Pressable
+                          style={styles.actionItem}
+                          onPress={() => { setOpenMenu(null); router.push(`/seance/details/${sessionIdByEvent[ev.id]}` as any); }}
+                        >
+                          <Text style={styles.actionText}>Voir les détails</Text>
                         </Pressable>
                         <View style={styles.actionDivider} />
                       </>

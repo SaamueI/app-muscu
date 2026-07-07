@@ -1,15 +1,18 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '../../src/db';
 import { duplicateMesocycle } from '../../src/db/meso';
-import { mesocycles, mesoSessions, programs } from '../../src/db/schema';
+import { calendarEvents, mesocycles, mesoSessions, programs } from '../../src/db/schema';
+import { getExistingSession } from '../../src/db/session';
 import { exportMesocycle } from '../../src/export/actions';
+import { STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
 
 type Mesocycle = typeof mesocycles.$inferSelect;
 type MesoSession = typeof mesoSessions.$inferSelect;
+type CalendarEvent = typeof calendarEvents.$inferSelect;
 
 const DAY_LABELS: Record<string, string> = {
   Monday: 'Lundi', Tuesday: 'Mardi', Wednesday: 'Mercredi', Thursday: 'Jeudi',
@@ -24,6 +27,7 @@ export default function MesocycleDetailScreen() {
   const [sessions, setSessions] = useState<MesoSession[]>([]);
   const [exporting, setExporting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [eventsByMesoSession, setEventsByMesoSession] = useState<Record<string, CalendarEvent>>({});
 
   const onExport = async () => {
     if (!id || exporting) return;
@@ -56,9 +60,38 @@ export default function MesocycleDetailScreen() {
       .where(eq(mesoSessions.mesocycleId, id))
       .orderBy(asc(mesoSessions.order));
     setSessions(rows);
+
+    if (m?.startDate && rows.length > 0) {
+      const sessionIds = rows.map((s) => s.id);
+      const events = await db
+        .select()
+        .from(calendarEvents)
+        .where(and(eq(calendarEvents.refType, 'meso_session'), inArray(calendarEvents.refId, sessionIds)));
+      const map: Record<string, CalendarEvent> = {};
+      for (const ev of events) {
+        if (ev.refId) map[ev.refId] = ev;
+      }
+      setEventsByMesoSession(map);
+    } else {
+      setEventsByMesoSession({});
+    }
   }, [id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const handleSessionPress = async (s: MesoSession) => {
+    const ev = eventsByMesoSession[s.id];
+    if (meso?.startDate && ev?.status === 'completed') {
+      const sessionId = await getExistingSession(ev.id);
+      if (sessionId) {
+        router.push(`/seance/details/${sessionId}` as any);
+      } else {
+        Alert.alert('Séance introuvable', "Impossible de retrouver la séance réalisée pour cet événement.");
+      }
+      return;
+    }
+    router.push(`/mesocycles/${id}/sessions/${s.id}`);
+  };
 
   if (!meso) {
     return <View style={styles.center}><Text>Chargement…</Text></View>;
@@ -107,18 +140,28 @@ export default function MesocycleDetailScreen() {
               {weekSessions.length === 0 ? (
                 <Text style={styles.empty}>Aucune séance.</Text>
               ) : (
-                weekSessions.map((s) => (
-                  <Pressable
-                    key={s.id}
-                    style={styles.sessionRow}
-                    onPress={() => router.push(`/mesocycles/${id}/sessions/${s.id}`)}
-                  >
-                    <View style={[styles.dot, { backgroundColor: s.color }]} />
-                    <Text style={styles.sessionName}>{s.title || 'Séance'}</Text>
-                    {s.day ? <Text style={styles.sessionDay}>{DAY_LABELS[s.day]}</Text> : null}
-                    <Text style={styles.chevron}>›</Text>
-                  </Pressable>
-                ))
+                weekSessions.map((s) => {
+                  const ev = eventsByMesoSession[s.id];
+                  return (
+                    <Pressable
+                      key={s.id}
+                      style={styles.sessionRow}
+                      onPress={() => handleSessionPress(s)}
+                    >
+                      <View style={[styles.dot, { backgroundColor: s.color }]} />
+                      <Text style={styles.sessionName}>{s.title || 'Séance'}</Text>
+                      {s.day ? <Text style={styles.sessionDay}>{DAY_LABELS[s.day]}</Text> : null}
+                      {meso.startDate && ev && (
+                        <View style={[styles.badge, { backgroundColor: STATUS_COLORS[ev.status] + '22' }]}>
+                          <Text style={[styles.badgeText, { color: STATUS_COLORS[ev.status] }]}>
+                            {STATUS_LABELS[ev.status]}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={styles.chevron}>›</Text>
+                    </Pressable>
+                  );
+                })
               )}
             </View>
           );
@@ -188,6 +231,8 @@ const styles = StyleSheet.create({
   dot: { width: 11, height: 11, borderRadius: 6 },
   sessionName: { flex: 1, fontSize: 15, color: '#111' },
   sessionDay: { fontSize: 12, color: '#888' },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  badgeText: { fontSize: 11, fontWeight: '600' },
   chevron: { fontSize: 18, color: '#ccc' },
 
   exportBtn: {

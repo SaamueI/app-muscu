@@ -70,6 +70,9 @@ src/
 
 scripts/
   testMesoExport.ts / testProgramExport.ts / testTransform.ts  # Tests Node (tsx)
+
+docs/
+  phase-NN-*.md          # Docs d'implémentation des phases restantes (marche à suivre)
 ```
 
 ---
@@ -190,6 +193,20 @@ Ancrer un mésocycle = choisir sa date de départ (`mesocycles.startDate`, lundi
 
 ---
 
+## Détails de séance (phase 10)
+
+Écran `app/seance/details/[sessionId].tsx` (consultation) + `app/seance/details/[sessionId]/modifier.tsx` (édition), accessibles depuis le calendrier (item « Voir les détails ») et depuis un mésocycle ancré (badge de statut par séance, `src/utils/eventStatus.ts` — extrait du calendrier pour être partagé).
+
+**Helpers ajoutés à `src/db/session.ts`** :
+- `renumberSetsAfterDelete(exerciseLogId, deletedSetNumber)` — après suppression d'une série, décale d'un cran les `setNumber` suivants pour combler le trou.
+- `swapSetNumbers(exerciseLogId, setNumberA, setNumberB)` — échange les `set_logs` de deux numéros de série (déplace G+D ensemble pour l'unilatéral), utilisé par les flèches ▲▼ de réordonnancement dans l'écran d'édition.
+
+**Édition d'une série unilatérale** : contrairement à l'écran séance live (`seance/exercice/[logId].tsx`, où seul le côté G est éditable), l'écran d'édition de la phase 10 permet de modifier **chaque côté indépendamment**, ou les deux à la fois avec une performance identique (option « Modifier les deux côtés »).
+
+**Piège Android** : `Alert.alert` n'affiche que **3 boutons max** sur Android (au-delà, les derniers sont silencieusement supprimés — c'est ce qui faisait disparaître « Annuler »). Toujours découper en alertes imbriquées de ≤3 boutons plutôt que d'empiler les options dans une seule alerte.
+
+---
+
 ## Patterns récurrents
 
 ### Rafraîchissement au focus
@@ -227,12 +244,20 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 6 | Séance live (timer, log sets, supersets, unités kg/lb, unilatéral) | ✅ |
 | 8 | Export / import XLSX des mésocycles et programmes | ✅ |
 | 9 | Ancrage calendaire des mésocycles | ✅ |
+| 10 | Détails de séance : écran détail + mode édition des séries (ajout/suppression/réorganisation) + accès depuis calendrier + états/accès depuis méso ancré | ✅ |
 
 ## Phases restantes
 
-| Phase | Contenu |
-|---|---|
-| 7 | Onglet Progression (graphiques, records) |
+Chaque phase 11+ a un document d'implémentation détaillé dans `docs/` — **le lire en entier avant de commencer la phase**.
+
+| Phase | Contenu | Doc |
+|---|---|---|
+| 7 | Onglet Progression (graphiques, records) | — |
+| 11 | Séance live : préremplissage par dernières perfs, chrono de repos visible partout, interruption de séance + bandeau de reprise global | `docs/phase-11-seance-live-ameliorations.md` |
+| 12 | Import : écrans dédiés, explication format + prompt LLM copiable, import CSV, templates téléchargeables | `docs/phase-12-import-dedie.md` |
+| 13 | Chrono en arrière-plan : notification Android chronometer (⚠️ requiert dev build, sortie d'Expo Go) | `docs/phase-13-chrono-arriere-plan.md` |
+
+Ordre recommandé : 11 → 12 → 13 (13 en dernier car elle change le workflow de build). La phase 7 est indépendante.
 
 ---
 
