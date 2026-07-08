@@ -115,10 +115,13 @@ export async function pickImportFile(): Promise<PickedImportFile | null> {
   if (!asset) return null;
 
   const name = asset.name ?? '';
-  const baseName = name.replace(/\.(xlsx|csv)$/i, '').trim() || 'Import';
+  // .txt traité comme .csv : un LLM ou un partage renomme parfois le fichier
+  // texte généré en .txt, le contenu (en-têtes + lignes séparées par virgule)
+  // reste identique.
+  const baseName = name.replace(/\.(xlsx|csv|txt)$/i, '').trim() || 'Import';
   const file = new File(asset.uri);
 
-  if (/\.csv$/i.test(name)) {
+  if (/\.(csv|txt)$/i.test(name)) {
     return { kind: 'csv', text: await file.text(), baseName };
   }
   return { kind: 'xlsx', base64: await file.base64(), baseName };

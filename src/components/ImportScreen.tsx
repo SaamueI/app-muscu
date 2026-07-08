@@ -52,6 +52,11 @@ export default function ImportScreen({
           Copie ce prompt, colle-le dans un assistant (ChatGPT, Claude…) avec ta demande, puis
           importe le fichier .csv qu'il te renvoie.
         </Text>
+        <Text style={styles.tip}>
+          Conseil : joins aussi le modèle CSV téléchargé ci-dessous à ta conversation avec le LLM,
+          en plus de ce prompt — ça l'aide à respecter le format exact. Privilégie toujours le CSV,
+          un LLM sait rarement produire un vrai fichier Excel.
+        </Text>
         <Pressable style={[styles.button, styles.buttonPrimary]} onPress={handleCopyPrompt}>
           <Text style={styles.buttonPrimaryText}>Copier le prompt pour un LLM</Text>
         </Pressable>
@@ -94,6 +99,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '600', color: '#888', textTransform: 'uppercase' },
   explanation: { fontSize: 13, color: '#333', lineHeight: 19 },
   hint: { fontSize: 13, color: '#888', lineHeight: 18 },
+  tip: { fontSize: 12, color: '#B45309', lineHeight: 17, fontStyle: 'italic' },
 
   row: { flexDirection: 'row', gap: 8 },
   rowButton: { flex: 1 },
