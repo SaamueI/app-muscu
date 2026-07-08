@@ -6,9 +6,14 @@ import { mesoToCsv, parseMesoCsv } from './core/mesoCsv';
 import { buildMesoWorkbook, parseMesoWorkbook } from './core/mesoXlsx';
 import { programToCsv, parseProgramCsv } from './core/programCsv';
 import { buildProgramWorkbook, parseProgramWorkbook } from './core/programXlsx';
+import type { ImportResult } from './core/importResult';
 import { SAMPLE_MESOCYCLE, SAMPLE_PROGRAM } from './core/sampleData';
+import { loadExerciseCatalog } from './db/catalog';
 import { importMesocycle, loadMesocycleForExport } from './db/mesoDb';
 import { importProgram, loadProgramForExport } from './db/programDb';
+
+export { loadExerciseCatalog };
+export type { CreatedExercise, ImportResult } from './core/importResult';
 
 export type ExportFile = { base64: string; filename: string };
 export type TextExportFile = { text: string; filename: string };
@@ -35,13 +40,13 @@ export async function buildMesocycleFile(mesocycleId: string): Promise<ExportFil
   };
 }
 
-// Retourne l'id du mésocycle importé.
-export async function importMesocycleFile(base64: string): Promise<string> {
+// Retourne l'id du mésocycle importé + les exercices personnalisés créés.
+export async function importMesocycleFile(base64: string): Promise<ImportResult> {
   const data = parseMesoWorkbook({ type: 'base64', data: base64 });
   return importMesocycle(data);
 }
 
-export async function importMesocycleCsv(csvText: string, importName: string): Promise<string> {
+export async function importMesocycleCsv(csvText: string, importName: string): Promise<ImportResult> {
   const data = parseMesoCsv(csvText, importName);
   return importMesocycle(data);
 }
@@ -67,12 +72,12 @@ export async function buildProgramFile(programId: string): Promise<ExportFile> {
   };
 }
 
-export async function importProgramFile(base64: string): Promise<string> {
+export async function importProgramFile(base64: string): Promise<ImportResult> {
   const data = parseProgramWorkbook({ type: 'base64', data: base64 });
   return importProgram(data);
 }
 
-export async function importProgramCsv(csvText: string, importName: string): Promise<string> {
+export async function importProgramCsv(csvText: string, importName: string): Promise<ImportResult> {
   const data = parseProgramCsv(csvText, importName);
   return importProgram(data);
 }

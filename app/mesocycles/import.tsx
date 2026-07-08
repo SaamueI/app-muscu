@@ -6,7 +6,8 @@ import {
   downloadMesoTemplateXlsx,
   pickAndImportMesocycle,
 } from '../../src/export/actions';
-import { MESO_FORMAT_EXPLANATION, MESO_LLM_PROMPT } from '../../src/export/formatDoc';
+import { loadExerciseCatalog } from '../../src/export/index';
+import { buildMesoLlmPrompt, MESO_FORMAT_EXPLANATION } from '../../src/export/formatDoc';
 
 export default function ImportMesocycleScreen() {
   const router = useRouter();
@@ -14,7 +15,9 @@ export default function ImportMesocycleScreen() {
   return (
     <ImportScreen
       explanation={MESO_FORMAT_EXPLANATION}
-      prompt={MESO_LLM_PROMPT}
+      // Catalogue chargé à la demande (au clic sur « Copier »), pas au montage :
+      // l'écran s'ouvre instantanément et le prompt reste toujours à jour.
+      buildPrompt={async () => buildMesoLlmPrompt(await loadExerciseCatalog())}
       onDownloadXlsx={downloadMesoTemplateXlsx}
       onDownloadCsv={downloadMesoTemplateCsv}
       pickAndImport={pickAndImportMesocycle}

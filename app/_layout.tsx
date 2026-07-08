@@ -69,6 +69,7 @@ function RootLayoutNav() {
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="exercices/[id]" options={{ title: 'Exercice' }} />
         <Stack.Screen name="exercices/nouveau" options={{ title: 'Nouvel exercice' }} />
+        <Stack.Screen name="exercices/reconcilier" options={{ title: 'Doublons d\'exercices', presentation: 'modal' }} />
         <Stack.Screen name="programmes/nouveau" options={{ title: 'Nouveau programme' }} />
         <Stack.Screen name="programmes/import" options={{ title: 'Importer un programme' }} />
         <Stack.Screen name="programmes/[id]" options={{ title: 'Programme' }} />

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import ImportReconcileBanner from '../../src/components/ImportReconcileBanner';
 import { db } from '../../src/db';
 import { programExercises, programs, programSessions } from '../../src/db/schema';
 import { exportProgram } from '../../src/export/actions';
@@ -98,6 +99,7 @@ export default function ProgrammeDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ImportReconcileBanner targetId={id} />
       {/* En-tête */}
       <View style={styles.header}>
         <Text style={styles.title}>{program.name}</Text>

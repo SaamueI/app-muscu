@@ -6,7 +6,8 @@ import {
   downloadProgramTemplateXlsx,
   pickAndImportProgram,
 } from '../../src/export/actions';
-import { PROGRAM_FORMAT_EXPLANATION, PROGRAM_LLM_PROMPT } from '../../src/export/formatDoc';
+import { loadExerciseCatalog } from '../../src/export/index';
+import { buildProgramLlmPrompt, PROGRAM_FORMAT_EXPLANATION } from '../../src/export/formatDoc';
 
 export default function ImportProgramScreen() {
   const router = useRouter();
@@ -14,7 +15,9 @@ export default function ImportProgramScreen() {
   return (
     <ImportScreen
       explanation={PROGRAM_FORMAT_EXPLANATION}
-      prompt={PROGRAM_LLM_PROMPT}
+      // Catalogue chargé à la demande (au clic sur « Copier »), pas au montage :
+      // l'écran s'ouvre instantanément et le prompt reste toujours à jour.
+      buildPrompt={async () => buildProgramLlmPrompt(await loadExerciseCatalog())}
       onDownloadXlsx={downloadProgramTemplateXlsx}
       onDownloadCsv={downloadProgramTemplateCsv}
       pickAndImport={pickAndImportProgram}

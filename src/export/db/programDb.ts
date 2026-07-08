@@ -18,6 +18,7 @@ import {
   type ProgramExport,
   type ProgramSessionExport,
 } from '../core/programTypes';
+import type { CreatedExercise, ImportResult } from '../core/importResult';
 import {
   buildNameIndex,
   groupIdsToLabels,
@@ -93,24 +94,27 @@ export async function loadProgramForExport(programId: string): Promise<ProgramEx
 
 // ─── Import : pivot → DB ──────────────────────────────────────────────────────
 
-export async function importProgram(data: ProgramExport): Promise<string> {
+export async function importProgram(data: ProgramExport): Promise<ImportResult> {
   const existing = await db
     .select({ id: exercises.id, name: exercises.name })
     .from(exercises);
   const nameIdx = buildNameIndex(existing);
+  const createdExercises: CreatedExercise[] = [];
 
   async function resolveExercise(name: string): Promise<string> {
     const key = normalizeName(name);
     const found = nameIdx.get(key);
     if (found) return found;
     const id = generateId();
+    const cleanName = name.trim();
     await db.insert(exercises).values({
       id,
-      name: name.trim(),
+      name: cleanName,
       primaryMuscles: [],
       isCustom: true,
     });
     nameIdx.set(key, id);
+    createdExercises.push({ id, name: cleanName });
     return id;
   }
 
@@ -168,5 +172,5 @@ export async function importProgram(data: ProgramExport): Promise<string> {
     }
   }
 
-  return programId;
+  return { id: programId, createdExercises };
 }

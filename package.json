@@ -46,6 +46,8 @@
     "test:export:meso": "tsx scripts/testMesoExport.ts",
     "test:export:program": "tsx scripts/testProgramExport.ts",
     "test:import:csv": "tsx scripts/testCsvImport.ts",
+    "test:mojibake": "tsx scripts/testMojibake.ts",
+    "test:match": "tsx scripts/testExerciseMatch.ts",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

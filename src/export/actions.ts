@@ -23,6 +23,8 @@ import {
   shareExportFile,
   shareTextFile,
 } from './fileIO';
+import type { ImportResult } from './core/importResult';
+import { setImportReconcile } from '../utils/importReconcileStore';
 
 function reportError(title: string, e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
@@ -93,13 +95,23 @@ export const downloadProgramTemplateCsv = () => templateTextFlow(buildProgramTem
 // ─── Import (sélection + insertion) ───────────────────────────────────────────
 // Retourne l'id créé, ou null si annulé / erreur. Accepte .xlsx (export ou
 // modèle) et .csv (généré par un LLM, un tableur, ou le modèle téléchargé).
+// Mémorise au passage les exercices personnalisés créés → l'écran de détail
+// affichera une bannière proposant de les réconcilier (phase 12, solution 2).
 
 export async function pickAndImportMesocycle(): Promise<string | null> {
   try {
     const picked = await pickImportFile();
     if (!picked) return null;
-    if (picked.kind === 'csv') return await importMesocycleCsv(picked.text, picked.baseName);
-    return await importMesocycleFile(picked.base64);
+    const res: ImportResult =
+      picked.kind === 'csv'
+        ? await importMesocycleCsv(picked.text, picked.baseName)
+        : await importMesocycleFile(picked.base64);
+    setImportReconcile({
+      targetId: res.id,
+      kind: 'mesocycle',
+      createdExercises: res.createdExercises,
+    });
+    return res.id;
   } catch (e) {
     reportError('Import impossible', e);
     return null;
@@ -110,8 +122,16 @@ export async function pickAndImportProgram(): Promise<string | null> {
   try {
     const picked = await pickImportFile();
     if (!picked) return null;
-    if (picked.kind === 'csv') return await importProgramCsv(picked.text, picked.baseName);
-    return await importProgramFile(picked.base64);
+    const res: ImportResult =
+      picked.kind === 'csv'
+        ? await importProgramCsv(picked.text, picked.baseName)
+        : await importProgramFile(picked.base64);
+    setImportReconcile({
+      targetId: res.id,
+      kind: 'programme',
+      createdExercises: res.createdExercises,
+    });
+    return res.id;
   } catch (e) {
     reportError('Import impossible', e);
     return null;

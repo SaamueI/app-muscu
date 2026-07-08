@@ -20,6 +20,7 @@ import {
   type MesocycleExport,
   type MesoSessionExport,
 } from '../core/mesoTypes';
+import type { CreatedExercise, ImportResult } from '../core/importResult';
 import {
   buildNameIndex,
   groupIdsToLabels,
@@ -113,26 +114,30 @@ export async function loadMesocycleForExport(
 // ─── Import : pivot → DB ──────────────────────────────────────────────────────
 // Régénère tous les IDs, apparie les exercices par nom (création custom si
 // absent), et reconstruit les supersetGroupId depuis les étiquettes A/B.
-// Retourne l'id du mésocycle créé.
+// Retourne l'id du mésocycle créé + la liste des exercices personnalisés créés
+// (pour la réconciliation post-import — phase 12, solution 2).
 
-export async function importMesocycle(data: MesocycleExport): Promise<string> {
+export async function importMesocycle(data: MesocycleExport): Promise<ImportResult> {
   const existing = await db
     .select({ id: exercises.id, name: exercises.name })
     .from(exercises);
   const nameIdx = buildNameIndex(existing);
+  const createdExercises: CreatedExercise[] = [];
 
   async function resolveExercise(name: string): Promise<string> {
     const key = normalizeName(name);
     const found = nameIdx.get(key);
     if (found) return found;
     const id = generateId();
+    const cleanName = name.trim();
     await db.insert(exercises).values({
       id,
-      name: name.trim(),
+      name: cleanName,
       primaryMuscles: [],
       isCustom: true,
     });
     nameIdx.set(key, id);
+    createdExercises.push({ id, name: cleanName });
     return id;
   }
 
@@ -204,5 +209,5 @@ export async function importMesocycle(data: MesocycleExport): Promise<string> {
     }
   }
 
-  return mesoId;
+  return { id: mesoId, createdExercises };
 }

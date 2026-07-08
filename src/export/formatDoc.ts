@@ -22,6 +22,19 @@ const CONVENTIONS = `
 - Encodage : UTF-8 requis pour les fichiers .csv.
 `.trim();
 
+// Section « Exercices disponibles » injectée dans le prompt LLM. Pure : reçoit
+// la liste des noms d'exercices déjà présents dans la DB de l'utilisateur (voir
+// loadExerciseCatalog). Vide si aucun catalogue fourni (fallback).
+function buildCatalogSection(catalogNames: string[]): string {
+  if (catalogNames.length === 0) return '';
+  const list = catalogNames.map((n) => `- ${n}`).join('\n');
+  return `
+Exercices déjà disponibles dans l'application (${catalogNames.length}) — réutilise EXACTEMENT l'un de ces noms chaque fois que c'est possible, plutôt que d'en inventer un nouveau (un nom absent crée un exercice personnalisé en double). Ne propose un nouveau nom que si aucun ci-dessous ne correspond vraiment ; dans ce cas, reste proche des conventions de nommage existantes :
+
+${list}
+`.trim();
+}
+
 export const MESO_FORMAT_EXPLANATION = `
 Format attendu pour un mésocycle (.xlsx ou .csv) : une ligne = une SÉRIE.
 
@@ -48,7 +61,13 @@ ${CONVENTIONS}
 Le fichier .xlsx (export ou modèle téléchargé) contient en plus un onglet « Méta » et des couleurs par séance — inutiles en .csv, qui ne contient que les données ci-dessus.
 `.trim();
 
-function buildPrompt(kind: 'mésocycle' | 'programme', explanation: string, example: string): string {
+function buildPrompt(
+  kind: 'mésocycle' | 'programme',
+  explanation: string,
+  example: string,
+  catalogNames: string[]
+): string {
+  const catalog = buildCatalogSection(catalogNames);
   return `
 Tu vas générer un fichier CSV pour importer un ${kind} de musculation dans une application mobile.
 
@@ -59,19 +78,23 @@ Réponds UNIQUEMENT avec le contenu du CSV (pas de texte autour, pas de bloc de 
 Exemple minimal valide (à adapter à ma demande ci-dessous) :
 
 ${example}
-
+${catalog ? `\n${catalog}\n` : ''}
 Ma demande :
 `.trim();
 }
 
-export const MESO_LLM_PROMPT = buildPrompt(
-  'mésocycle',
-  MESO_FORMAT_EXPLANATION,
-  mesoToCsv(SAMPLE_MESOCYCLE)
-);
+// Prompts LLM paramétrés par le catalogue d'exercices de l'utilisateur.
+// Appeler avec la liste chargée via loadExerciseCatalog ; sans argument, le
+// prompt reste valide mais sans la section « Exercices disponibles » (fallback).
+export function buildMesoLlmPrompt(catalogNames: string[] = []): string {
+  return buildPrompt('mésocycle', MESO_FORMAT_EXPLANATION, mesoToCsv(SAMPLE_MESOCYCLE), catalogNames);
+}
 
-export const PROGRAM_LLM_PROMPT = buildPrompt(
-  'programme',
-  PROGRAM_FORMAT_EXPLANATION,
-  programToCsv(SAMPLE_PROGRAM)
-);
+export function buildProgramLlmPrompt(catalogNames: string[] = []): string {
+  return buildPrompt(
+    'programme',
+    PROGRAM_FORMAT_EXPLANATION,
+    programToCsv(SAMPLE_PROGRAM),
+    catalogNames
+  );
+}

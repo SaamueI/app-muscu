@@ -5,11 +5,14 @@
 
 import * as Clipboard from 'expo-clipboard';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type Props = {
   explanation: string;
-  prompt: string;
+  // Construit le prompt à la demande (au clic sur « Copier ») : le catalogue
+  // d'exercices injecté dans le prompt est chargé depuis la DB à ce moment-là,
+  // pour ne pas ralentir l'ouverture de l'écran et rester toujours à jour.
+  buildPrompt: () => Promise<string>;
   onDownloadXlsx: () => void;
   onDownloadCsv: () => void;
   pickAndImport: () => Promise<string | null>;
@@ -18,17 +21,34 @@ type Props = {
 
 export default function ImportScreen({
   explanation,
-  prompt,
+  buildPrompt,
   onDownloadXlsx,
   onDownloadCsv,
   pickAndImport,
   onImported,
 }: Props) {
   const [importing, setImporting] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const handleCopyPrompt = async () => {
-    await Clipboard.setStringAsync(prompt);
-    Alert.alert('Copié', 'Le prompt a été copié dans le presse-papiers — colle-le dans ton LLM préféré avec ta demande.');
+    if (copying) return;
+    setCopying(true);
+    try {
+      // Laisse React peindre le spinner AVANT le travail lourd : la requête SQLite
+      // de buildPrompt peut bloquer le thread JS, ce qui empêcherait sinon l'affichage
+      // de l'indicateur. Deux frames suffisent à monter/peindre l'ActivityIndicator
+      // (qui, une fois affiché, continue de tourner côté natif même si JS est bloqué).
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+      const prompt = await buildPrompt();
+      await Clipboard.setStringAsync(prompt);
+      Alert.alert('Copié', 'Le prompt a été copié dans le presse-papiers — colle-le dans ton LLM préféré avec ta demande.');
+    } catch (e) {
+      Alert.alert('Erreur', e instanceof Error ? e.message : String(e));
+    } finally {
+      setCopying(false);
+    }
   };
 
   const handlePick = async () => {
@@ -57,8 +77,19 @@ export default function ImportScreen({
           en plus de ce prompt — ça l'aide à respecter le format exact. Privilégie toujours le CSV,
           un LLM sait rarement produire un vrai fichier Excel.
         </Text>
-        <Pressable style={[styles.button, styles.buttonPrimary]} onPress={handleCopyPrompt}>
-          <Text style={styles.buttonPrimaryText}>Copier le prompt pour un LLM</Text>
+        <Pressable
+          style={[styles.button, styles.buttonPrimary, copying && styles.buttonDisabled]}
+          onPress={handleCopyPrompt}
+          disabled={copying}
+        >
+          {copying ? (
+            <View style={styles.buttonRow}>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={styles.buttonPrimaryText}>Préparation du prompt…</Text>
+            </View>
+          ) : (
+            <Text style={styles.buttonPrimaryText}>Copier le prompt pour un LLM</Text>
+          )}
         </Pressable>
       </View>
 
@@ -105,6 +136,7 @@ const styles = StyleSheet.create({
   rowButton: { flex: 1 },
 
   button: { borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  buttonRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   buttonPrimary: { backgroundColor: '#007AFF' },
   buttonPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   buttonSecondary: { backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#e0e0e0' },
