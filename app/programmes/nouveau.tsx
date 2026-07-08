@@ -66,6 +66,10 @@ export default function NouveauProgrammeScreen() {
         >
           <Text style={styles.buttonText}>Créer le programme</Text>
         </Pressable>
+
+        <Pressable style={styles.importButton} onPress={() => router.push('/programmes/import')}>
+          <Text style={styles.importButtonText}>Importer depuis un fichier</Text>
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -106,4 +110,12 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  importButton: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  importButtonText: { color: '#007AFF', fontSize: 15, fontWeight: '600' },
 });

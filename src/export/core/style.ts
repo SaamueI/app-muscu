@@ -21,6 +21,14 @@ export function lighten(hex: string, amount: number): string {
     .toUpperCase();
 }
 
+// Palette de couleurs de séance (même palette que les écrans de création de
+// séance), utilisée pour assigner une couleur aux séances importées depuis un
+// CSV (qui n'a pas de colonne couleur).
+export const SESSION_COLORS = [
+  '#007AFF', '#34C759', '#FF3B30', '#FF9500',
+  '#AF52DE', '#5AC8FA', '#FF2D55', '#FFCC00',
+];
+
 const THIN = { style: 'thin', color: { rgb: 'D0D5DD' } };
 
 export const borderAll = {

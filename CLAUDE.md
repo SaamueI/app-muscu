@@ -17,6 +17,8 @@ Application mobile React Native / Expo de suivi d'entraînement.
 
 **Lancer l'app** : `npx expo start --clear` (le `--clear` est nécessaire après toute nouvelle migration).
 
+**Ne jamais utiliser la preview navigateur (`expo start --web`) pour tester** : l'app dépend de fonctionnalités natives (expo-sqlite, expo-keep-awake, Alert, PanResponder…) qui ne se comportent pas fidèlement sur web. Toute vérification doit se faire sur device/émulateur via Expo Go — se limiter au typecheck (`npx tsc --noEmit`) et à la relecture de code quand aucun device n'est disponible, et le dire explicitement plutôt que de prétendre avoir testé.
+
 ---
 
 ## Structure des fichiers
@@ -53,6 +55,7 @@ src/
     WeekPickerField.tsx     # Calendrier inline react-native-calendars, sélection à la semaine ; props: value: string (ISO "YYYY-Www"), onChange
     GlobalRestBanner.tsx    # Bandeau repos en cours (phase 11) ; prop excludeLogId
     ActiveSessionBanner.tsx # Bandeau reprise séance globale (phase 11), déplaçable
+    ImportScreen.tsx        # Écran d'import générique réutilisé par méso/programme (phase 12)
   utils/
     generateId.ts
     altPickerStore.ts      # Store module-level pour passer un exo entre écrans
@@ -61,19 +64,23 @@ src/
     useSessionTimer.ts     # Hook useActiveSessionTick (tick 1s pour les bandeaux, phase 11)
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
     eventStatus.ts         # Labels/couleurs statut event + getEffectiveStatus (déduit "en cours")
-  export/                  # Phase 8 — export/import XLSX (voir section dédiée)
-    core/                  # Sérialisation XLSX pure (testable sous Node)
-      mesoXlsx.ts / programXlsx.ts    # build*/parse* d'un classeur
-      style.ts             # Styles xlsx-js-style + helpers mm:ss
-      transform.ts         # Labels superset ⇄ UUID, matching exos par nom
+  export/                  # Phases 8 + 12 — export/import XLSX + CSV (voir sections dédiées)
+    core/                  # Sérialisation pure (testable sous Node)
+      mesoXlsx.ts / programXlsx.ts    # build*/parse* d'un classeur XLSX
+      mesoCsv.ts / programCsv.ts      # to*Csv/parse*Csv (phase 12)
+      csv.ts                # rowsToCsv/readCsvSheet génériques (phase 12)
+      sampleData.ts         # Pivot d'exemple (templates + prompt LLM, phase 12)
+      style.ts             # Styles xlsx-js-style + helpers mm:ss + SESSION_COLORS
+      transform.ts         # Labels superset ⇄ UUID, matching exos par nom, parseAlternatives
       mesoTypes.ts / programTypes.ts  # Formats pivot
     db/                    # Pont Drizzle ⇄ pivot (mesoDb.ts, programDb.ts)
-    index.ts               # Façade build*File / import*File
-    fileIO.ts              # expo-file-system / document-picker / sharing / SAF
-    actions.ts             # Flux UI (Alert) : export* / pickAndImport*
+    index.ts               # Façade build*File / import*File / build*Template* (phase 12)
+    fileIO.ts              # expo-file-system / document-picker / sharing / SAF (xlsx + texte)
+    actions.ts             # Flux UI (Alert) : export* / pickAndImport* / download*Template*
+    formatDoc.ts            # Explication format + prompt LLM copiable (phase 12)
 
 scripts/
-  testMesoExport.ts / testProgramExport.ts / testTransform.ts  # Tests Node (tsx)
+  testMesoExport.ts / testProgramExport.ts / testTransform.ts / testCsvImport.ts  # Tests Node (tsx)
 
 docs/
   phase-NN-*.md          # Docs d'implémentation des phases restantes (marche à suivre)
@@ -229,6 +236,30 @@ Trois axes (doc source `docs/phase-11-seance-live-ameliorations.md`), plus deux 
 
 ---
 
+## Import : écrans dédiés, CSV, prompt LLM, templates (phase 12)
+
+Le bouton « Importer » a quitté les headers d'onglets : il vit désormais dans les écrans de création (`programmes/nouveau.tsx`, `mesocycles/nouveau.tsx`, lien « Importer depuis un fichier ») et pointe vers deux écrans dédiés `app/programmes/import.tsx` / `app/mesocycles/import.tsx`, tous deux de simples wrappers autour du composant partagé `src/components/ImportScreen.tsx`.
+
+**Format CSV ajouté en plus du XLSX** (`src/export/core/mesoCsv.ts` / `programCsv.ts`, `mesoToCsv`/`parseMesoCsv`, `programToCsv`/`parseProgramCsv`) :
+- Contrairement au XLSX, le CSV n'a qu'une seule feuille : pas d'onglet *Méta*, pas de colonnes techniques `_ordreSeance`/`_ordreExo`/`_couleur`. Le `type` (méso vs programme) est imposé par l'écran d'où vient l'import, pas par le fichier ; le **nom** de l'objet créé = nom du fichier sans extension (passé en paramètre `importName` aux `parse*Csv`).
+- L'ordre des séances/exercices est déduit de **blocs contigus de lignes** partageant la même clé (semaine+séance+jour pour le méso, séance+jour pour le programme) — donc toutes les lignes d'une même séance doivent se suivre dans le fichier. La couleur de séance (absente du CSV) est auto-assignée depuis `SESSION_COLORS` (`core/style.ts`), stable par nom de séance.
+- Réutilise les validations existantes du XLSX plutôt que de les dupliquer : `rowToSet`/`validateSet` (exportés de `mesoXlsx.ts`) et `rowToTargets`/`validateTargets` (exportés de `programXlsx.ts`).
+- Lecture via `core/csv.ts` (`readCsvSheet` = `XLSX.read(text, {type:'string'})`, auto-détection du séparateur `,`/`;`/tab ; UTF-8 requis, non détecté/converti si le fichier est en latin-1).
+
+**Templates téléchargeables** (méso/programme × XLSX/CSV) générés à la volée depuis un pivot d'exemple pur (`core/sampleData.ts`, `SAMPLE_MESOCYCLE`/`SAMPLE_PROGRAM`) — jamais de fichier statique embarqué, donc toujours synchrones avec le format. `index.ts` : `buildMesoTemplateFile`/`buildMesoTemplateCsv`/`buildProgramTemplateFile`/`buildProgramTemplateCsv`.
+
+**Prompt LLM copiable** (`src/export/formatDoc.ts`) : `MESO_FORMAT_EXPLANATION`/`PROGRAM_FORMAT_EXPLANATION` et `MESO_LLM_PROMPT`/`PROGRAM_LLM_PROMPT` sont générés dynamiquement à partir des colonnes réelles (`MESO_CSV_COLS`/`PROGRAM_CSV_COLS`) et de l'exemple CSV du pivot d'exemple (`mesoToCsv(SAMPLE_MESOCYCLE)`) — jamais de texte inventé à la main, donc jamais désynchronisé du parseur. Le prompt cible une sortie **CSV** (un LLM ne peut pas produire un vrai `.xlsx` en chat).
+
+**fileIO.ts** : `pickImportFile()` (remplace `pickXlsxBase64`) détecte `.xlsx` vs `.csv` par extension du nom de fichier et renvoie `{kind, base64|text, baseName}`. Ajout de `shareTextFile`/`saveTextFile`, symétriques de `shareExportFile`/`saveExportFile` pour du texte brut (CSV, encodage UTF-8 par défaut de `File.write`/`writeAsStringAsync`, pas de base64).
+
+**actions.ts** : `pickAndImportMesocycle`/`pickAndImportProgram` branchent sur `kind` (`csv` → `importMesocycleCsv`/`importProgramCsv`, `xlsx` → chemin existant). Logique Partager/Enregistrer factorisée dans `shareOrSaveFlow`, réutilisée par l'export existant et les 4 actions `download*Template*`.
+
+**Limite connue inchangée** : import toujours non transactionnel (validation au parse, avant tout écrit en DB) — le CSV réutilise le même chemin pivot → DB (`importMesocycle`/`importProgram`) que le XLSX.
+
+**Tests** : `npm run test:import:csv` (`scripts/testCsvImport.ts`) — round-trip pivot→CSV→parse (méso+programme), auto-cohérence des 4 templates (round-trip exact pour XLSX, ré-import sans erreur pour CSV), rejets (CSV vide, en-têtes obligatoires manquantes).
+
+---
+
 ## Patterns récurrents
 
 ### Rafraîchissement au focus
@@ -268,18 +299,18 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 9 | Ancrage calendaire des mésocycles | ✅ |
 | 10 | Détails de séance : écran détail + mode édition des séries (ajout/suppression/réorganisation) + accès depuis calendrier + états/accès depuis méso ancré | ✅ |
 | 11 | Séance live : préremplissage par dernières perfs, chrono de repos visible partout, interruption de séance + bandeau de reprise déplaçable, état "en cours" du calendrier | ✅ |
+| 12 | Import : écrans dédiés, explication format + prompt LLM copiable, import CSV, templates téléchargeables | ✅ |
 
 ## Phases restantes
 
-Chaque phase 12+ a un document d'implémentation détaillé dans `docs/` — **le lire en entier avant de commencer la phase**.
+Chaque phase 13+ a un document d'implémentation détaillé dans `docs/` — **le lire en entier avant de commencer la phase**.
 
 | Phase | Contenu | Doc |
 |---|---|---|
 | 7 | Onglet Progression (graphiques, records) | — |
-| 12 | Import : écrans dédiés, explication format + prompt LLM copiable, import CSV, templates téléchargeables | `docs/phase-12-import-dedie.md` |
 | 13 | Chrono en arrière-plan : notification Android chronometer (⚠️ requiert dev build, sortie d'Expo Go) | `docs/phase-13-chrono-arriere-plan.md` |
 
-Ordre recommandé : 12 → 13 (13 en dernier car elle change le workflow de build). La phase 7 est indépendante.
+La phase 13 change le workflow de build (sortie d'Expo Go) ; la phase 7 est indépendante.
 
 ---
 

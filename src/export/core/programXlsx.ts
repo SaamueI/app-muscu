@@ -60,7 +60,7 @@ const COLS: Col[] = [
   { key: '_couleur', header: '_couleur', w: 10, hidden: true },
 ];
 
-type Row = Record<string, string | number | null>;
+export type Row = Record<string, string | number | null>;
 
 // ─── Construction ──────────────────────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ function readDataRows(wb: XLSX.WorkBook): Row[] {
   return rows;
 }
 
-function rowToTargets(r: Row): ProgramTargets {
+export function rowToTargets(r: Row): ProgramTargets {
   const t: ProgramTargets = {
     setsMin: num(r.seriesMin),
     setsMax: num(r.seriesMax),
@@ -225,7 +225,7 @@ function rowToTargets(r: Row): ProgramTargets {
   return t;
 }
 
-function validateTargets(t: ProgramTargets, exname: string) {
+export function validateTargets(t: ProgramTargets, exname: string) {
   const pairs: [string, number | null, number | null][] = [
     ['séries', t.setsMin, t.setsMax],
     ['reps', t.repsMin, t.repsMax],

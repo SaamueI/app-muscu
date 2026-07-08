@@ -6,7 +6,6 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native
 import { db } from '../../src/db';
 import { deleteMesocycleCascade, duplicateMesocycle } from '../../src/db/meso';
 import { mesocycles, programs } from '../../src/db/schema';
-import { pickAndImportMesocycle } from '../../src/export/actions';
 
 type Row = { m: typeof mesocycles.$inferSelect; programName: string | null };
 
@@ -28,18 +27,8 @@ export default function MesocycleScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const onImport = async () => {
-    const newId = await pickAndImportMesocycle();
-    if (newId) router.push(`/mesocycles/${newId}`);
-  };
-
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerLeft: () => (
-        <Pressable onPress={onImport} style={styles.headerLeft}>
-          <Text style={styles.headerBtn}>Importer</Text>
-        </Pressable>
-      ),
       headerRight: () => (
         <View style={styles.headerRight}>
           <Pressable onPress={() => setEditMode((e) => !e)}>
@@ -150,7 +139,6 @@ export default function MesocycleScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f7' },
   headerRight: { flexDirection: 'row', gap: 16, marginRight: 4, alignItems: 'center' },
-  headerLeft: { marginLeft: 12 },
   headerBtn: { color: '#007AFF', fontSize: 16 },
   headerPlus: { color: '#007AFF', fontSize: 26, lineHeight: 28 },
 
