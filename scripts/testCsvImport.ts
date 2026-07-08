@@ -127,6 +127,31 @@ expectThrow(
   'programme CSV en-têtes invalides (Séance/Exercice manquants) → erreur'
 );
 
+// ─── 6. Mojibake (accents cassés par une réinterprétation Latin-1) ───────────
+// Reproduit le bug rapporté : un CSV généré par un LLM dont les accents ont
+// été cassés (ex. "Séance" → "SÃ©ance") faisait échouer l'import avec
+// « colonne Séance manquante ». readCsvSheet doit réparer ça avant de parser.
+
+function mojibake(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  return Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+}
+
+{
+  const csv = mojibake(programToCsv(SAMPLE_PROGRAM));
+  try {
+    const parsed = parseProgramCsv(csv, 'Import test');
+    check(
+      JSON.stringify(parsed.sessions.map((s) => s.name)) ===
+        JSON.stringify(SAMPLE_PROGRAM.sessions.map((s) => s.name)),
+      'programme CSV mojibaké : en-têtes ET noms de séance/exercice réparés'
+    );
+  } catch (e) {
+    failures++;
+    console.error(`❌ programme CSV mojibaké : import échoué — ${e}`);
+  }
+}
+
 // ─── Bilan ───────────────────────────────────────────────────────────────────
 
 if (failures) {
