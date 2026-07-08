@@ -66,7 +66,7 @@ const COLS: Col[] = [
   { key: '_couleur', header: '_couleur', w: 10, hidden: true },
 ];
 
-type Row = Record<string, string | number | null>;
+export type Row = Record<string, string | number | null>;
 
 // ─── Construction ──────────────────────────────────────────────────────────────
 
@@ -228,7 +228,7 @@ function readDataRows(wb: XLSX.WorkBook): Row[] {
   return rows;
 }
 
-function rowToSet(r: Row): MesoSetTarget | null {
+export function rowToSet(r: Row): MesoSetTarget | null {
   if (r.serie === '' || r.serie == null) return null;
   const set: MesoSetTarget = {
     setNumber: num(r.serie) ?? 1,
@@ -246,7 +246,7 @@ function rowToSet(r: Row): MesoSetTarget | null {
   return set;
 }
 
-function validateSet(s: MesoSetTarget) {
+export function validateSet(s: MesoSetTarget) {
   const pairs: [string, number | null, number | null][] = [
     ['reps', s.repsMin, s.repsMax],
     ['poids', s.weightMin, s.weightMax],

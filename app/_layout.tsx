@@ -69,7 +69,9 @@ function RootLayoutNav() {
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="exercices/[id]" options={{ title: 'Exercice' }} />
         <Stack.Screen name="exercices/nouveau" options={{ title: 'Nouvel exercice' }} />
+        <Stack.Screen name="exercices/reconcilier" options={{ title: 'Doublons d\'exercices', presentation: 'modal' }} />
         <Stack.Screen name="programmes/nouveau" options={{ title: 'Nouveau programme' }} />
+        <Stack.Screen name="programmes/import" options={{ title: 'Importer un programme' }} />
         <Stack.Screen name="programmes/[id]" options={{ title: 'Programme' }} />
         <Stack.Screen name="programmes/[id]/modifier" options={{ title: 'Modifier le programme' }} />
         <Stack.Screen name="programmes/[id]/sessions/[sessionId]" options={{ title: 'Séance' }} />
@@ -82,6 +84,7 @@ function RootLayoutNav() {
         <Stack.Screen name="calendrier/event/nouveau" options={{ title: 'Nouvel événement' }} />
         <Stack.Screen name="calendrier/event/[eventId]/modifier" options={{ title: 'Modifier' }} />
         <Stack.Screen name="mesocycles/nouveau" options={{ title: 'Nouveau mésocycle' }} />
+        <Stack.Screen name="mesocycles/import" options={{ title: 'Importer un mésocycle' }} />
         <Stack.Screen name="mesocycles/[id]" options={{ title: 'Mésocycle' }} />
         <Stack.Screen name="mesocycles/[id]/modifier" options={{ title: 'Modifier le mésocycle' }} />
         <Stack.Screen name="mesocycles/[id]/ancrer" options={{ title: 'Ancrer au calendrier', presentation: 'modal' }} />

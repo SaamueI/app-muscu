@@ -1,0 +1,100 @@
+// Fusion d'un exercice personnalisé dans un exercice existant.
+// Sert à la réconciliation post-import (phase 12, solution 2) : quand
+// l'utilisateur constate qu'un exercice fraîchement créé est en réalité un
+// doublon d'un exercice du catalogue, on réassigne toutes ses références vers
+// la cible puis on supprime le custom devenu orphelin.
+//
+// Rappel FK (cf. CLAUDE.md) : les colonnes exercise_id référencent exercises.id
+// SANS onDelete → il FAUT réassigner toutes les références avant de supprimer,
+// sinon la contrainte FK bloque la suppression.
+
+import { and, eq } from 'drizzle-orm';
+
+import { db } from './index';
+import { exerciseLogs, exercises, mesoExercises, programExercises } from './schema';
+
+// Remplace fromId par toId dans un tableau d'alternatives, en dédupliquant.
+// Renvoie la même référence si fromId est absent (permet de sauter l'update),
+// ou null si le tableau devient vide.
+function replaceInAlt(alt: string[] | null, fromId: string, toId: string): string[] | null {
+  if (!alt || !alt.includes(fromId)) return alt;
+  const next: string[] = [];
+  for (const id of alt) {
+    const mapped = id === fromId ? toId : id;
+    if (!next.includes(mapped)) next.push(mapped);
+  }
+  return next.length ? next : null;
+}
+
+// Réassigne toutes les références de `fromId` vers `toId`, puis supprime
+// l'exercice `fromId`. Refuse de supprimer un exercice du catalogue de base
+// (garde-fou : seul un isCustom peut être fusionné/supprimé).
+// `variation` (optionnel) : si fourni, écrit aussi `selectedVariation` sur les
+// lignes template réassignées (meso_exercises / program_exercises) — sert à la
+// réconciliation quand l'utilisateur choisit une variante de la cible.
+export async function remapExercise(
+  fromId: string,
+  toId: string,
+  variation?: string | null
+): Promise<void> {
+  if (fromId === toId) return;
+
+  const [from] = await db
+    .select({ id: exercises.id, isCustom: exercises.isCustom })
+    .from(exercises)
+    .where(eq(exercises.id, fromId));
+  if (!from) return; // déjà absent
+  if (!from.isCustom) {
+    throw new Error('Seul un exercice personnalisé peut être fusionné.');
+  }
+
+  // 1. Références principales (exercise_id) dans les trois tables. exercise_logs
+  // n'a pas de selectedVariation (colonne portée par les lignes template).
+  const templateSet =
+    variation === undefined
+      ? { exerciseId: toId }
+      : { exerciseId: toId, selectedVariation: variation };
+  await db
+    .update(mesoExercises)
+    .set(templateSet)
+    .where(eq(mesoExercises.exerciseId, fromId));
+  await db
+    .update(programExercises)
+    .set(templateSet)
+    .where(eq(programExercises.exerciseId, fromId));
+  await db
+    .update(exerciseLogs)
+    .set({ exerciseId: toId })
+    .where(eq(exerciseLogs.exerciseId, fromId));
+
+  // 2. Alternatives (JSON) : meso_exercises + program_exercises.
+  const meRows = await db
+    .select({ id: mesoExercises.id, alt: mesoExercises.alternativeExerciseIds })
+    .from(mesoExercises);
+  for (const r of meRows) {
+    const next = replaceInAlt(r.alt ?? null, fromId, toId);
+    if (next !== (r.alt ?? null)) {
+      await db
+        .update(mesoExercises)
+        .set({ alternativeExerciseIds: next })
+        .where(eq(mesoExercises.id, r.id));
+    }
+  }
+  const peRows = await db
+    .select({ id: programExercises.id, alt: programExercises.alternativeExerciseIds })
+    .from(programExercises);
+  for (const r of peRows) {
+    const next = replaceInAlt(r.alt ?? null, fromId, toId);
+    if (next !== (r.alt ?? null)) {
+      await db
+        .update(programExercises)
+        .set({ alternativeExerciseIds: next })
+        .where(eq(programExercises.id, r.id));
+    }
+  }
+
+  // 3. Suppression du custom devenu orphelin (garde-fou is_custom réaffirmé).
+  await db
+    .delete(exercises)
+    .where(and(eq(exercises.id, fromId), eq(exercises.isCustom, true)));
+}

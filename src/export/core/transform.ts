@@ -68,3 +68,11 @@ export function buildNameIndex(rows: { id: string; name: string }[]): Map<string
   }
   return idx;
 }
+
+// "A ; B ; C" → ["A", "B", "C"]. Utilisé pour la colonne Alternatives.
+export function parseAlternatives(v: unknown): string[] {
+  return String(v ?? '')
+    .split(';')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}

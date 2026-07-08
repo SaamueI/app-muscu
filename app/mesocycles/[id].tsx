@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import ImportReconcileBanner from '../../src/components/ImportReconcileBanner';
 import { db } from '../../src/db';
 import { duplicateMesocycle } from '../../src/db/meso';
 import { calendarEvents, mesocycles, mesoSessions, programs, workoutSessions } from '../../src/db/schema';
@@ -116,6 +117,7 @@ export default function MesocycleDetailScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ImportReconcileBanner targetId={id} />
       <View style={styles.section}>
         <Pressable
           style={styles.editIcon}
