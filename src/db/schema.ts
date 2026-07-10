@@ -120,6 +120,7 @@ export const workoutSessions = sqliteTable('workout_sessions', {
   date: text('date').notNull(),
   startedAt: text('started_at'),
   finishedAt: text('finished_at'),
+  createdEvent: integer('created_event', { mode: 'boolean' }).notNull().default(false),
 });
 
 // ─── ExerciseLog ─────────────────────────────────────────────────────────────

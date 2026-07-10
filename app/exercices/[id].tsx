@@ -1,23 +1,35 @@
 import { eq } from 'drizzle-orm';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
   FlatList,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ExercisePicker from '../../src/components/ExercisePicker';
 import { db } from '../../src/db';
+import {
+  deleteExerciseCascade,
+  getExerciseUsage,
+  remapExercise,
+  type ExerciseUsage,
+} from '../../src/db/exerciseMerge';
 import exerciseImages from '../../src/db/exerciseImages';
-import { exercises } from '../../src/db/schema';
+import { exercises, setLogs } from '../../src/db/schema';
+import { getPreviousPerfs, getUserWeightUnit, type PerfGroup } from '../../src/db/session';
+import { formatWeight } from '../../src/utils/weightUtils';
 
 type Exercise = typeof exercises.$inferSelect;
+type SetLogRow = typeof setLogs.$inferSelect;
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -27,27 +39,103 @@ export default function ExerciceDetailScreen() {
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [imageIndex, setImageIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const [history, setHistory] = useState<PerfGroup[]>([]);
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  const [showReplacePicker, setShowReplacePicker] = useState(false);
 
-  useEffect(() => {
-    if (!id) return;
-    db.select()
-      .from(exercises)
-      .where(eq(exercises.id, id))
-      .then(([row]) => setExercise(row ?? null));
-  }, [id]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return;
+      db.select()
+        .from(exercises)
+        .where(eq(exercises.id, id))
+        .then(([row]) => setExercise(row ?? null));
+      getPreviousPerfs(id, 5).then(setHistory);
+      getUserWeightUnit().then(setWeightUnit);
+    }, [id])
+  );
 
-  const handleDelete = () => {
-    Alert.alert('Supprimer', `Supprimer "${exercise?.name}" ?`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          await db.delete(exercises).where(eq(exercises.id, id!));
-          router.back();
+  const handleDelete = async () => {
+    if (!id || !exercise) return;
+    const usage = await getExerciseUsage(id);
+    const hasFkUsage =
+      usage.programExerciseCount + usage.mesoExerciseCount + usage.logCount > 0;
+
+    if (!hasFkUsage) {
+      // Pas de FK bloquante, mais des mentions "alternative" (sans FK) peuvent
+      // exister → on passe quand même par le cascade pour les nettoyer.
+      Alert.alert('Supprimer', `Supprimer "${exercise.name}" ?`, [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteExerciseCascade(id);
+              router.back();
+            } catch (e) {
+              Alert.alert('Erreur', e instanceof Error ? e.message : String(e));
+            }
+          },
         },
+      ]);
+      return;
+    }
+
+    Alert.alert('Exercice utilisé', buildUsageRecap(usage), [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Remplacer par…', onPress: () => setShowReplacePicker(true) },
+      {
+        text: 'Tout supprimer…',
+        style: 'destructive',
+        onPress: () => confirmDeleteCascade(usage),
       },
     ]);
+  };
+
+  const confirmDeleteCascade = (usage: ExerciseUsage) => {
+    Alert.alert(
+      'Suppression définitive',
+      `${usage.logCount} séance(s) enregistrée(s) perdront cet exercice et ses séries. Cette action est irréversible.`,
+      [
+        { text: 'Retour', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteExerciseCascade(id!);
+              router.back();
+            } catch (e) {
+              Alert.alert('Erreur', e instanceof Error ? e.message : String(e));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleReplaceSelect = (target: Exercise) => {
+    if (target.id === id) return; // exclusion manuelle : ExercisePicker n'a pas de prop d'exclusion
+    setShowReplacePicker(false);
+    Alert.alert(
+      'Remplacer',
+      `Remplacer "${exercise?.name}" par "${target.name}" partout ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Remplacer',
+          onPress: async () => {
+            try {
+              await remapExercise(id!, target.id);
+              router.back();
+            } catch (e) {
+              Alert.alert('Erreur', e instanceof Error ? e.message : String(e));
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (!exercise) {
@@ -159,12 +247,26 @@ export default function ExerciceDetailScreen() {
         </View>
       )}
 
-      {/* ── Performances (placeholder) ── */}
+      {/* ── Performances ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Performances</Text>
-        <Text style={styles.placeholder}>
-          Tes performances s'afficheront ici après ta première séance avec cet exercice.
-        </Text>
+        {history.length === 0 ? (
+          <Text style={styles.placeholder}>
+            Tes performances s'afficheront ici après ta première séance avec cet exercice.
+          </Text>
+        ) : (
+          history.map((group) => (
+            <View key={group.sessionId} style={styles.histGroup}>
+              <Text style={styles.histDate}>{formatDate(group.sessionDate)}</Text>
+              {group.sets.map((sl, i) => (
+                <Text key={sl.id} style={styles.historySet}>
+                  Série {sl.setNumber ?? i + 1}
+                  {sideLabel(sl.side)} · {formatSetLine(sl, weightUnit)}
+                </Text>
+              ))}
+            </View>
+          ))
+        )}
       </View>
 
       {/* ── Actions ── */}
@@ -181,8 +283,63 @@ export default function ExerciceDetailScreen() {
           </Pressable>
         )}
       </View>
+
+      {/* ── Remplacer par… ── */}
+      <Modal
+        visible={showReplacePicker}
+        animationType="slide"
+        onRequestClose={() => setShowReplacePicker(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f2f2f7' }}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Remplacer par…</Text>
+            <Pressable onPress={() => setShowReplacePicker(false)}>
+              <Text style={styles.pickerClose}>Annuler</Text>
+            </Pressable>
+          </View>
+          <ExercisePicker
+            cardIndicator="chevron"
+            onSelect={handleReplaceSelect}
+            onCreateNew={() => {
+              setShowReplacePicker(false);
+              router.push('/exercices/nouveau' as any);
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
     </ScrollView>
   );
+}
+
+// ─── Helpers affichage ────────────────────────────────────────────────────────
+
+function buildUsageRecap(usage: ExerciseUsage): string {
+  let msg =
+    `Utilisé dans ${usage.programExerciseCount} programme(s), ` +
+    `${usage.mesoExerciseCount} mésocycle(s) et ${usage.logCount} séance(s) enregistrée(s).`;
+  if (usage.altCount > 0) {
+    msg += ` (+ ${usage.altCount} mention(s) comme alternative.)`;
+  }
+  return msg;
+}
+
+function sideLabel(side: string | null): string {
+  return side === 'L' ? ' (G)' : side === 'R' ? ' (D)' : '';
+}
+
+function formatSetLine(sl: SetLogRow, unit: 'kg' | 'lb'): string {
+  const parts: string[] = [];
+  if (sl.weight != null) parts.push(formatWeight(sl.weight, unit));
+  if (sl.reps != null) parts.push(`× ${sl.reps}`);
+  if (sl.rir != null) parts.push(`RIR ${sl.rir}`);
+  if (sl.pdc) parts.push('PDC');
+  if (sl.durationSeconds != null) parts.push(`${sl.durationSeconds}s`);
+  return parts.join(' · ');
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 const styles = StyleSheet.create({
@@ -225,6 +382,10 @@ const styles = StyleSheet.create({
   placeholder: { fontSize: 14, color: '#aaa', fontStyle: 'italic', lineHeight: 20 },
   variationItem: { fontSize: 15, color: '#333', lineHeight: 24 },
 
+  histGroup: { marginBottom: 12 },
+  histDate: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4 },
+  historySet: { fontSize: 14, color: '#333', lineHeight: 20, paddingLeft: 8 },
+
   actions: { flexDirection: 'row', gap: 12, marginHorizontal: 12, marginTop: 4 },
   editButton: {
     flex: 1, backgroundColor: '#007AFF', borderRadius: 10,
@@ -236,4 +397,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ffcdd2',
   },
   deleteButtonText: { color: '#c62828', fontWeight: '600', fontSize: 15 },
+
+  pickerHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#ddd',
+  },
+  pickerTitle: { fontSize: 17, fontWeight: '600', color: '#1C1C1E' },
+  pickerClose: { fontSize: 16, color: '#007AFF' },
 });

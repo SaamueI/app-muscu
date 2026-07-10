@@ -87,12 +87,14 @@ type StartParams = {
   programSessionId?: string;
   mesoSessionId?: string;
   calendarEventId?: string;
+  date?: string;
 };
 
 export async function startWorkoutSession(params: StartParams): Promise<string> {
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
 
+  const createdEvent = !params.calendarEventId;
   let calEventId = params.calendarEventId;
   let resolvedProgramSessionId = params.programSessionId;
   let resolvedMesoSessionId = params.mesoSessionId;
@@ -165,8 +167,9 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
     calendarEventId: calEventId,
     programSessionId: resolvedProgramSessionId ?? null,
     mesoSessionId: resolvedMesoSessionId ?? null,
-    date: today,
+    date: params.date ?? today,
     startedAt: now,
+    createdEvent,
   });
 
   // Initialiser les exercise_logs depuis le template
@@ -338,6 +341,34 @@ export async function finishSession(sessionId: string): Promise<void> {
     await db
       .update(calendarEvents)
       .set({ status: 'completed' })
+      .where(eq(calendarEvents.id, session.calendarEventId));
+  }
+
+  if (getActiveSession().sessionId === sessionId) {
+    resetActiveSession();
+  }
+}
+
+// ─── Annuler une séance commencée ─────────────────────────────────────────────
+// Supprime le workout_session (cascade vers exercise_logs puis set_logs).
+// L'event calendrier redevient "planned" s'il préexistait, ou est supprimé
+// s'il avait été créé ad hoc au démarrage (session.createdEvent).
+
+export async function cancelWorkoutSession(sessionId: string): Promise<void> {
+  const [session] = await db
+    .select()
+    .from(workoutSessions)
+    .where(eq(workoutSessions.id, sessionId));
+  if (!session) return;
+
+  await db.delete(workoutSessions).where(eq(workoutSessions.id, sessionId));
+
+  if (session.createdEvent) {
+    await db.delete(calendarEvents).where(eq(calendarEvents.id, session.calendarEventId));
+  } else {
+    await db
+      .update(calendarEvents)
+      .set({ status: 'planned' })
       .where(eq(calendarEvents.id, session.calendarEventId));
   }
 
