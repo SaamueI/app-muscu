@@ -7,6 +7,7 @@ import { db } from '../../../../src/db';
 import { calendarEvents, exercises, mesoExercises, mesoSessions, mesoSets, workoutSessions } from '../../../../src/db/schema';
 import { finishSession, startWorkoutSession } from '../../../../src/db/session';
 import { generateId } from '../../../../src/utils/generateId';
+import { startPlannedSession } from '../../../../src/utils/startSessionFlow';
 
 type MesoSession = typeof mesoSessions.$inferSelect;
 type Exercise = typeof exercises.$inferSelect;
@@ -108,9 +109,11 @@ export default function MesoSessionDetailScreen() {
   };
 
   const handleStart = async () => {
-    const sid = event
-      ? await startWorkoutSession({ calendarEventId: event.id })
-      : await startWorkoutSession({ mesoSessionId: mesoSessionId! });
+    if (event) {
+      startPlannedSession(event, (sessionId) => router.push(`/seance/${sessionId}` as any));
+      return;
+    }
+    const sid = await startWorkoutSession({ mesoSessionId: mesoSessionId! });
     router.push(`/seance/${sid}` as any);
   };
 

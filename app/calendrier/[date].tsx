@@ -12,8 +12,10 @@ import {
 
 import { db } from '../../src/db';
 import { calendarEvents, workoutSessions } from '../../src/db/schema';
-import { deleteCalendarEventCascade, finishSession, getExistingSession, startWorkoutSession } from '../../src/db/session';
+import { deleteCalendarEventCascade, finishSession, getExistingSession } from '../../src/db/session';
 import { getEffectiveStatus, STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
+import { getPlannedSessionRoute } from '../../src/utils/plannedSessionRoute';
+import { startPlannedSession } from '../../src/utils/startSessionFlow';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -64,8 +66,11 @@ export default function JourDetailScreen() {
   const handleStart = async (ev: CalendarEvent) => {
     setOpenMenu(null);
     const existing = await getExistingSession(ev.id);
-    const sessionId = existing ?? await startWorkoutSession({ calendarEventId: ev.id });
-    router.push(`/seance/${sessionId}` as any);
+    if (existing) {
+      router.push(`/seance/${existing}` as any);
+      return;
+    }
+    startPlannedSession(ev, (sessionId) => router.push(`/seance/${sessionId}` as any));
   };
 
   const handleFinishEvent = (ev: CalendarEvent) => {
@@ -82,6 +87,16 @@ export default function JourDetailScreen() {
         },
       },
     ]);
+  };
+
+  const handleViewPlannedSession = async (ev: CalendarEvent) => {
+    setOpenMenu(null);
+    const route = await getPlannedSessionRoute(ev);
+    if (!route) {
+      Alert.alert('Séance introuvable', "La séance planifiée liée à cet événement n'existe plus.");
+      return;
+    }
+    router.push(route as any);
   };
 
   const deleteEvent = (ev: CalendarEvent) => {
@@ -160,6 +175,14 @@ export default function JourDetailScreen() {
                           onPress={() => { setOpenMenu(null); router.push(`/seance/details/${sessionIdByEvent[ev.id]}` as any); }}
                         >
                           <Text style={styles.actionText}>Voir les détails</Text>
+                        </Pressable>
+                        <View style={styles.actionDivider} />
+                      </>
+                    )}
+                    {ev.type === 'workout_session' && ev.refId && (
+                      <>
+                        <Pressable style={styles.actionItem} onPress={() => handleViewPlannedSession(ev)}>
+                          <Text style={styles.actionText}>Voir la séance planifiée</Text>
                         </Pressable>
                         <View style={styles.actionDivider} />
                       </>

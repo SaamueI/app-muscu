@@ -8,6 +8,18 @@ export function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+const SHORT_DAY_NAMES = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const SHORT_MONTH_NAMES = [
+  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+];
+
+// Format court lisible d'une date "YYYY-MM-DD", ex "mer. 8 juil.".
+export function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${SHORT_DAY_NAMES[d.getDay()]} ${d.getDate()} ${SHORT_MONTH_NAMES[d.getMonth()]}`;
+}
+
 export function addDays(d: Date, n: number): Date {
   const result = new Date(d);
   result.setDate(result.getDate() + n);

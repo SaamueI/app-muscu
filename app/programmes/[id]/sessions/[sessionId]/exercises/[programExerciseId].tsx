@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -24,20 +24,15 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 import { db } from '../../../../../../src/db';
 import {
   exercises,
-  exerciseLogs,
   programExercises,
   setLogs,
-  workoutSessions,
 } from '../../../../../../src/db/schema';
+import { getPreviousPerfs, getUserWeightUnit, type PerfGroup } from '../../../../../../src/db/session';
+import { formatWeight } from '../../../../../../src/utils/weightUtils';
 
 type ProgramExercise = typeof programExercises.$inferSelect;
 type Exercise = typeof exercises.$inferSelect;
-type SetLog = typeof setLogs.$inferSelect;
-
-type HistoryEntry = {
-  date: string;
-  sets: (SetLog & { setIndex: number })[];
-};
+type SetLogRow = typeof setLogs.$inferSelect;
 
 export default function ProgramExerciceDetailScreen() {
   const { id, sessionId, programExerciseId } = useLocalSearchParams<{
@@ -53,7 +48,8 @@ export default function ProgramExerciceDetailScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [alternatives, setAlternatives] = useState<Exercise[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory] = useState<PerfGroup[]>([]);
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [editMode, setEditMode] = useState(false);
 
   // Alternatives edit state
@@ -99,26 +95,9 @@ export default function ProgramExerciceDetailScreen() {
     setEditAltIds(altIds);
     setEditAlts(alts);
 
-    // Load performance history
-    const logs = await db
-      .select({ el: exerciseLogs, ws: workoutSessions, sl: setLogs })
-      .from(exerciseLogs)
-      .innerJoin(workoutSessions, eq(exerciseLogs.workoutSessionId, workoutSessions.id))
-      .innerJoin(setLogs, eq(setLogs.exerciseLogId, exerciseLogs.id))
-      .where(eq(exerciseLogs.programExerciseId, programExerciseId))
-      .orderBy(desc(workoutSessions.date));
-
-    // Group by date
-    const grouped: Record<string, (SetLog & { setIndex: number })[]> = {};
-    for (const { ws, sl } of logs) {
-      if (!grouped[ws.date]) grouped[ws.date] = [];
-      grouped[ws.date].push({ ...sl, setIndex: grouped[ws.date].length + 1 });
-    }
-    setHistory(
-      Object.entries(grouped)
-        .sort(([a], [b]) => b.localeCompare(a))
-        .map(([date, sets]) => ({ date, sets }))
-    );
+    // Load performance history (toutes séances, quelle qu'en soit l'origine)
+    setHistory(await getPreviousPerfs(row.exercise.id, 5));
+    setWeightUnit(await getUserWeightUnit());
 
     // Init edit state
     setSelectedVariation(row.pe.selectedVariation ?? '');
@@ -468,19 +447,16 @@ export default function ProgramExerciceDetailScreen() {
           <Text style={styles.sectionTitle}>Performances</Text>
           {history.length === 0 ? (
             <Text style={styles.placeholderText}>
-              Aucune performance enregistrée pour cet exercice dans ce programme.
+              Aucune performance enregistrée pour cet exercice.
             </Text>
           ) : (
-            history.map((entry) => (
-              <View key={entry.date} style={styles.historyBlock}>
-                <Text style={styles.historyDate}>{entry.date}</Text>
-                {entry.sets.map((s) => (
-                  <Text key={s.id} style={styles.historySet}>
-                    Série {s.setIndex}
-                    {s.weight != null ? ` · ${s.weight} kg` : ''}
-                    {s.reps != null ? ` × ${s.reps}` : ''}
-                    {s.rir != null ? ` · RIR ${s.rir}` : ''}
-                    {s.durationSeconds != null ? ` · ${s.durationSeconds}s` : ''}
+            history.map((group) => (
+              <View key={group.sessionId} style={styles.historyBlock}>
+                <Text style={styles.historyDate}>{formatDate(group.sessionDate)}</Text>
+                {group.sets.map((sl, i) => (
+                  <Text key={sl.id} style={styles.historySet}>
+                    Série {sl.setNumber ?? i + 1}
+                    {sideLabel(sl.side)} · {formatSetLine(sl, weightUnit)}
                   </Text>
                 ))}
               </View>
@@ -491,6 +467,27 @@ export default function ProgramExerciceDetailScreen() {
       </ScrollView>
     </KeyboardAvoidingView>
   );
+}
+
+// ─── Helpers affichage ────────────────────────────────────────────────────────
+
+function sideLabel(side: string | null): string {
+  return side === 'L' ? ' (G)' : side === 'R' ? ' (D)' : '';
+}
+
+function formatSetLine(sl: SetLogRow, unit: 'kg' | 'lb'): string {
+  const parts: string[] = [];
+  if (sl.weight != null) parts.push(formatWeight(sl.weight, unit));
+  if (sl.reps != null) parts.push(`× ${sl.reps}`);
+  if (sl.rir != null) parts.push(`RIR ${sl.rir}`);
+  if (sl.pdc) parts.push('PDC');
+  if (sl.durationSeconds != null) parts.push(`${sl.durationSeconds}s`);
+  return parts.join(' · ');
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 const styles = StyleSheet.create({

@@ -14,6 +14,7 @@ import {
 
 import {
   addFreeExerciseLog,
+  cancelWorkoutSession,
   finishSession,
   getSessionLive,
   markExerciseDone,
@@ -95,11 +96,36 @@ export default function LiveSessionScreen() {
     ]);
   };
 
+  const doCancel = async () => {
+    if (!sessionId) return;
+    await cancelWorkoutSession(sessionId);
+    router.back();
+  };
+
+  const confirmCancel = () => {
+    const setCount = exerciseLogs.reduce((n, el) => n + el.setLogs.length, 0);
+    if (setCount === 0) {
+      doCancel();
+      return;
+    }
+    const eventMsg = session.createdEvent
+      ? "L'événement du calendrier sera supprimé."
+      : 'La séance redeviendra planifiée dans le calendrier.';
+    Alert.alert(
+      'Annuler la séance',
+      `Les ${setCount} série${setCount > 1 ? 's' : ''} enregistrée${setCount > 1 ? 's' : ''} seront supprimées. ${eventMsg}`,
+      [
+        { text: 'Retour', style: 'cancel' },
+        { text: 'Annuler la séance', style: 'destructive', onPress: doCancel },
+      ]
+    );
+  };
+
   const handleBackPress = () => {
     Alert.alert('Quitter la séance', undefined, [
-      { text: 'Annuler', style: 'cancel' },
+      { text: 'Retour', style: 'cancel' },
       { text: 'Interrompre', onPress: () => router.back() },
-      { text: 'Clôturer', style: 'destructive', onPress: doFinish },
+      { text: 'Annuler la séance…', style: 'destructive', onPress: confirmCancel },
     ]);
   };
 

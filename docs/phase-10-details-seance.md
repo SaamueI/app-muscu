@@ -1,7 +1,7 @@
 # Phase 10 — Accès aux détails d'une séance
 
 > Document d'implémentation destiné à l'agent qui réalisera la phase.
-> Lire `CLAUDE.md` en entier avant de commencer (surtout les sections « Ancrage calendaire » et « Piège FK récurrent »).
+> Lire `CLAUDE.md` en entier avant de commencer (surtout les sections « Ancrage calendaire » et « Pièges connus »).
 
 ## Objectif
 
@@ -73,3 +73,17 @@ Dans `app/mesocycles/[id].tsx` :
 - [ ] Taper une séance terminée dans le méso ouvre le même écran de détail.
 - [ ] Un méso non ancré est visuellement inchangé.
 - [ ] Aucune migration.
+
+## Notes d'implémentation (état final)
+
+> Contenu déplacé de `CLAUDE.md` pour garder ce dernier concis.
+
+Écran `app/seance/details/[sessionId].tsx` (consultation) + `app/seance/details/[sessionId]/modifier.tsx` (édition), accessibles depuis le calendrier (item « Voir les détails ») et depuis un mésocycle ancré (badge de statut par séance, `src/utils/eventStatus.ts` — extrait du calendrier pour être partagé).
+
+**Helpers ajoutés à `src/db/session.ts`** :
+- `renumberSetsAfterDelete(exerciseLogId, deletedSetNumber)` — après suppression d'une série, décale d'un cran les `setNumber` suivants pour combler le trou.
+- `swapSetNumbers(exerciseLogId, setNumberA, setNumberB)` — échange les `set_logs` de deux numéros de série (déplace G+D ensemble pour l'unilatéral), utilisé par les flèches ▲▼ de réordonnancement dans l'écran d'édition.
+
+**Édition d'une série unilatérale** : contrairement à l'écran séance live (`seance/exercice/[logId].tsx`, où seul le côté G est éditable), l'écran d'édition de la phase 10 permet de modifier **chaque côté indépendamment**, ou les deux à la fois avec une performance identique (option « Modifier les deux côtés »).
+
+**Piège Android** : `Alert.alert` n'affiche que **3 boutons max** sur Android (au-delà, les derniers sont silencieusement supprimés — c'est ce qui faisait disparaître « Annuler »). Toujours découper en alertes imbriquées de ≤3 boutons plutôt que d'empiler les options dans une seule alerte. (Résumé dans `CLAUDE.md` → « Pièges connus ».)

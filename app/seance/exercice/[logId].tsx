@@ -89,8 +89,6 @@ export default function ExerciceDetailLiveScreen() {
     setLocalNextSetNumber((found?.setLogs.length ?? 0) + 1);
   }, [logId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
   // ─── Timer tick + auto-mode ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -398,6 +396,11 @@ export default function ExerciceDetailLiveScreen() {
       <GlobalRestBanner excludeLogId={logId} />
       <ScrollView contentContainerStyle={styles.scroll}>
 
+        {/* ── Nom de l'exercice ── */}
+        <View style={styles.exerciseNameRow}>
+          <Text style={styles.exerciseName}>{enriched.exercise.name}</Text>
+        </View>
+
         {/* ── Objectifs ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Objectifs</Text>
@@ -657,6 +660,8 @@ function formatDate(iso: string): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F2F7' },
+  exerciseNameRow: { paddingHorizontal: 4 },
+  exerciseName: { fontSize: 20, fontWeight: '700', color: '#1C1C1E' },
   loading: { textAlign: 'center', marginTop: 40, color: '#8E8E93' },
   scroll: { padding: 16, gap: 16, paddingBottom: 40 },
   section: {

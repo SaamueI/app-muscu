@@ -13,17 +13,28 @@ import { and, eq } from 'drizzle-orm';
 import { db } from './index';
 import { exerciseLogs, exercises, mesoExercises, programExercises } from './schema';
 
+// Déduplique un tableau d'ids, renvoie null si le résultat est vide.
+function dedupeCompact(ids: string[]): string[] | null {
+  const next: string[] = [];
+  for (const id of ids) {
+    if (!next.includes(id)) next.push(id);
+  }
+  return next.length ? next : null;
+}
+
 // Remplace fromId par toId dans un tableau d'alternatives, en dédupliquant.
 // Renvoie la même référence si fromId est absent (permet de sauter l'update),
 // ou null si le tableau devient vide.
 function replaceInAlt(alt: string[] | null, fromId: string, toId: string): string[] | null {
   if (!alt || !alt.includes(fromId)) return alt;
-  const next: string[] = [];
-  for (const id of alt) {
-    const mapped = id === fromId ? toId : id;
-    if (!next.includes(mapped)) next.push(mapped);
-  }
-  return next.length ? next : null;
+  return dedupeCompact(alt.map((id) => (id === fromId ? toId : id)));
+}
+
+// Retire id d'un tableau d'alternatives. Renvoie la même référence si id est
+// absent (permet de sauter l'update), ou null si le tableau devient vide.
+function removeFromAlt(alt: string[] | null, id: string): string[] | null {
+  if (!alt || !alt.includes(id)) return alt;
+  return dedupeCompact(alt.filter((v) => v !== id));
 }
 
 // Réassigne toutes les références de `fromId` vers `toId`, puis supprime
@@ -97,4 +108,97 @@ export async function remapExercise(
   await db
     .delete(exercises)
     .where(and(eq(exercises.id, fromId), eq(exercises.isCustom, true)));
+}
+
+// Récapitulatif des usages d'un exercice, pour l'alerte de suppression
+// (fix 06) : nombre de références FK (bloquantes) + mentions en alternative
+// (non-FK, à nettoyer mais pas bloquantes).
+export interface ExerciseUsage {
+  programExerciseCount: number;
+  mesoExerciseCount: number;
+  logCount: number;
+  altCount: number;
+}
+
+export async function getExerciseUsage(exerciseId: string): Promise<ExerciseUsage> {
+  const peRows = await db
+    .select({ id: programExercises.id })
+    .from(programExercises)
+    .where(eq(programExercises.exerciseId, exerciseId));
+  const meRows = await db
+    .select({ id: mesoExercises.id })
+    .from(mesoExercises)
+    .where(eq(mesoExercises.exerciseId, exerciseId));
+  const logRows = await db
+    .select({ id: exerciseLogs.id })
+    .from(exerciseLogs)
+    .where(eq(exerciseLogs.exerciseId, exerciseId));
+
+  const allPe = await db
+    .select({ alt: programExercises.alternativeExerciseIds })
+    .from(programExercises);
+  const allMe = await db
+    .select({ alt: mesoExercises.alternativeExerciseIds })
+    .from(mesoExercises);
+  const altCount =
+    allPe.filter((r) => r.alt?.includes(exerciseId)).length +
+    allMe.filter((r) => r.alt?.includes(exerciseId)).length;
+
+  return {
+    programExerciseCount: peRows.length,
+    mesoExerciseCount: meRows.length,
+    logCount: logRows.length,
+    altCount,
+  };
+}
+
+// Supprime en cascade un exercice personnalisé et toutes ses références
+// (exercise_logs → set_logs, meso_exercises → meso_sets, program_exercises),
+// puis nettoie les mentions dans les tableaux alternativeExerciseIds restants
+// avant de supprimer l'exercice lui-même (garde-fou isCustom, comme
+// remapExercise). Ordre important : tables référençantes avant exercises,
+// FK sans onDelete sur exercise_id.
+export async function deleteExerciseCascade(exerciseId: string): Promise<void> {
+  const [row] = await db
+    .select({ id: exercises.id, isCustom: exercises.isCustom })
+    .from(exercises)
+    .where(eq(exercises.id, exerciseId));
+  if (!row) return; // déjà absent
+  if (!row.isCustom) {
+    throw new Error('Seul un exercice personnalisé peut être supprimé.');
+  }
+
+  // set_logs / meso_sets cascadent automatiquement (onDelete: 'cascade').
+  await db.delete(exerciseLogs).where(eq(exerciseLogs.exerciseId, exerciseId));
+  await db.delete(mesoExercises).where(eq(mesoExercises.exerciseId, exerciseId));
+  await db.delete(programExercises).where(eq(programExercises.exerciseId, exerciseId));
+
+  const meRows = await db
+    .select({ id: mesoExercises.id, alt: mesoExercises.alternativeExerciseIds })
+    .from(mesoExercises);
+  for (const r of meRows) {
+    const next = removeFromAlt(r.alt ?? null, exerciseId);
+    if (next !== (r.alt ?? null)) {
+      await db
+        .update(mesoExercises)
+        .set({ alternativeExerciseIds: next })
+        .where(eq(mesoExercises.id, r.id));
+    }
+  }
+  const peRows = await db
+    .select({ id: programExercises.id, alt: programExercises.alternativeExerciseIds })
+    .from(programExercises);
+  for (const r of peRows) {
+    const next = removeFromAlt(r.alt ?? null, exerciseId);
+    if (next !== (r.alt ?? null)) {
+      await db
+        .update(programExercises)
+        .set({ alternativeExerciseIds: next })
+        .where(eq(programExercises.id, r.id));
+    }
+  }
+
+  await db
+    .delete(exercises)
+    .where(and(eq(exercises.id, exerciseId), eq(exercises.isCustom, true)));
 }

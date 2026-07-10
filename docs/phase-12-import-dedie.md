@@ -76,3 +76,41 @@ Sur chaque écran d'import, deux boutons « Télécharger le modèle (Excel) » 
 - [ ] Les 4 templates (méso/programme × XLSX/CSV) se téléchargent et se réimportent tels quels sans erreur.
 - [ ] Mauvais fichier → message d'erreur clair, aucune écriture partielle en DB.
 - [ ] Tests Node verts (CSV + auto-cohérence des templates), scripts ajoutés au package.json.
+
+## Notes d'implémentation (état final)
+
+> Contenu déplacé de `CLAUDE.md` pour garder ce dernier concis.
+
+Le bouton « Importer » a quitté les headers d'onglets : il vit désormais dans les écrans de création (`programmes/nouveau.tsx`, `mesocycles/nouveau.tsx`, lien « Importer depuis un fichier ») et pointe vers deux écrans dédiés `app/programmes/import.tsx` / `app/mesocycles/import.tsx`, tous deux de simples wrappers autour du composant partagé `src/components/ImportScreen.tsx`.
+
+**Format CSV ajouté en plus du XLSX** (`src/export/core/mesoCsv.ts` / `programCsv.ts`, `mesoToCsv`/`parseMesoCsv`, `programToCsv`/`parseProgramCsv`) :
+- Contrairement au XLSX, le CSV n'a qu'une seule feuille : pas d'onglet *Méta*, pas de colonnes techniques `_ordreSeance`/`_ordreExo`/`_couleur`. Le `type` (méso vs programme) est imposé par l'écran d'où vient l'import, pas par le fichier ; le **nom** de l'objet créé = nom du fichier sans extension (passé en paramètre `importName` aux `parse*Csv`).
+- L'ordre des séances/exercices est déduit de **blocs contigus de lignes** partageant la même clé (semaine+séance+jour pour le méso, séance+jour pour le programme) — donc toutes les lignes d'une même séance doivent se suivre dans le fichier. La couleur de séance (absente du CSV) est auto-assignée depuis `SESSION_COLORS` (`core/style.ts`), stable par nom de séance.
+- Réutilise les validations existantes du XLSX plutôt que de les dupliquer : `rowToSet`/`validateSet` (exportés de `mesoXlsx.ts`) et `rowToTargets`/`validateTargets` (exportés de `programXlsx.ts`).
+- Lecture via `core/csv.ts` (`readCsvSheet` = `XLSX.read(text, {type:'string'})`, auto-détection du séparateur `,`/`;`/tab ; UTF-8 requis, non détecté/converti si le fichier est en latin-1).
+
+**Templates téléchargeables** (méso/programme × XLSX/CSV) générés à la volée depuis un pivot d'exemple pur (`core/sampleData.ts`, `SAMPLE_MESOCYCLE`/`SAMPLE_PROGRAM`) — jamais de fichier statique embarqué, donc toujours synchrones avec le format. `index.ts` : `buildMesoTemplateFile`/`buildMesoTemplateCsv`/`buildProgramTemplateFile`/`buildProgramTemplateCsv`.
+
+**Prompt LLM copiable** (`src/export/formatDoc.ts`) : `MESO_FORMAT_EXPLANATION`/`PROGRAM_FORMAT_EXPLANATION` et `buildMesoLlmPrompt(catalogNames)`/`buildProgramLlmPrompt(catalogNames)` sont générés dynamiquement à partir des colonnes réelles (`MESO_CSV_COLS`/`PROGRAM_CSV_COLS`) et de l'exemple CSV du pivot d'exemple (`mesoToCsv(SAMPLE_MESOCYCLE)`) — jamais de texte inventé à la main, donc jamais désynchronisé du parseur. Le prompt cible une sortie **CSV** (un LLM ne peut pas produire un vrai `.xlsx` en chat). Le catalogue d'exercices injecté (solution 1 ci-dessous) est chargé **à la demande** au clic sur « Copier » (`ImportScreen` prop `buildPrompt: () => Promise<string>`, état de chargement sur le bouton) — pas au montage, pour ne pas ralentir l'ouverture de l'écran et garder le catalogue à jour.
+
+**fileIO.ts** : `pickImportFile()` (remplace `pickXlsxBase64`) détecte `.xlsx` vs `.csv` par extension du nom de fichier et renvoie `{kind, base64|text, baseName}`. Ajout de `shareTextFile`/`saveTextFile`, symétriques de `shareExportFile`/`saveExportFile` pour du texte brut (CSV, encodage UTF-8 par défaut de `File.write`/`writeAsStringAsync`, pas de base64).
+
+**actions.ts** : `pickAndImportMesocycle`/`pickAndImportProgram` branchent sur `kind` (`csv` → `importMesocycleCsv`/`importProgramCsv`, `xlsx` → chemin existant). Logique Partager/Enregistrer factorisée dans `shareOrSaveFlow`, réutilisée par l'export existant et les 4 actions `download*Template*`.
+
+**Limite connue inchangée** : import toujours non transactionnel (validation au parse, avant tout écrit en DB) — le CSV réutilise le même chemin pivot → DB (`importMesocycle`/`importProgram`) que le XLSX.
+
+**Tests** : `npm run test:import:csv` (`scripts/testCsvImport.ts`) — round-trip pivot→CSV→parse (méso+programme), auto-cohérence des 4 templates (round-trip exact pour XLSX, ré-import sans erreur pour CSV), rejets (CSV vide, en-têtes obligatoires manquantes).
+
+### Anti-doublons d'exercices personnalisés (solutions 1 & 2)
+
+Problème : un nom d'exercice absent du catalogue crée un exercice personnalisé (`resolveExercise` dans `db/mesoDb.ts`/`programDb.ts`) → prolifération de doublons, aggravée par le fait que le catalogue de base (dataset free-exercise-db, 873 exos) est en **anglais** alors que l'utilisateur saisit souvent en **français**.
+
+**Solution 1 — prévention (prompt LLM enrichi)** : le prompt copiable inclut le catalogue réel des exercices existants. `formatDoc.ts` expose `buildMesoLlmPrompt(catalogNames)`/`buildProgramLlmPrompt(catalogNames)`. `db/catalog.ts` → `loadExerciseCatalog()` (noms dédupliqués/triés, custom + dataset), réexporté par `export/index.ts`. Les écrans `mesocycles/import.tsx`/`programmes/import.tsx` passent `buildPrompt={async () => buildXLlmPrompt(await loadExerciseCatalog())}` à `ImportScreen`, qui charge le catalogue **au clic sur « Copier »** (pas au montage — l'écran s'ouvre instantanément, spinner sur le bouton pendant la préparation). Section injectée uniquement dans le prompt, pas dans l'explication à l'écran.
+
+**Solution 2 — filet de sécurité (réconciliation post-import)** : après un import, l'écran de détail affiche une bannière (`src/components/ImportReconcileBanner.tsx`) « N nouveaux exercices — vérifier les doublons ? » → écran `app/exercices/reconcilier.tsx` (générique méso/programme, route modale).
+- **Capture** : `importMesocycle`/`importProgram` retournent désormais `{ id, createdExercises: {id,name}[] }` (type `core/importResult.ts`) — pas de `createdAt` sur `exercises`, donc capture obligatoire pendant l'import. Répercuté dans `export/index.ts` (4 fns import) et `export/actions.ts`, qui remplit `src/utils/importReconcileStore.ts` (store module-level, patron `altPickerStore`).
+- **Matching** : `src/export/core/exerciseMatch.ts` (PUR, `npm run test:match`) — `suggestMatches(name, catalog)` combine un lexique FR→EN par mots (`FR_EN_LEXICON` + `FR_EN_PHRASES` pour les idiomes où le mot-à-mot échoue, ex. `tirage visage → face pull`, `soulevé de terre → deadlift`) traduit en tokens, un score Jaccard, et un ratio Levenshtein (fautes de frappe même langue). Enrichir ces deux tables quand une saisie FR courante ne matche pas. Jamais de fusion auto : suggestions confirmées par l'utilisateur, avec repli recherche manuelle via `ExercisePicker` (dans un `<Modal>`).
+- **Application différée** : les choix (remplacer / garder / variante) restent en état LOCAL (`Decision` par item) jusqu'au bouton « Terminer » — rien n'est écrit en DB avant. C'est ce qui rend « Annuler » sûr (sinon `remapExercise` aurait déjà supprimé le custom). Chaque carte a un bouton Annuler qui revient à l'état « en attente ».
+- **Variante** : après un remplacement, bouton « Variante » → modal listant les `variations` de la cible + saisie libre ; stocké dans `Decision.variation`, écrit via `remapExercise(..., variation)` sur `selectedVariation` des lignes template.
+- **Voir le détail** : appui long sur une puce de suggestion → menu `Alert` « Afficher l'exercice » → `push('/exercices/[id]')` (bouton « Afficher » aussi sur une carte déjà remplacée).
+- **Remap** : `src/db/exerciseMerge.ts` → `remapExercise(fromId, toId, variation?)` réassigne `meso_exercises`/`program_exercises`/`exercise_logs` (colonne `exercise_id` **et** tableaux JSON `alternativeExerciseIds`) — et `selectedVariation` sur les lignes template si `variation` fourni — puis supprime le custom. Garde-fou : refuse si `fromId` n'est pas `isCustom`. FK `exercise_id` sans `onDelete` → réassignation obligatoire avant `DELETE` (sinon contrainte FK).
