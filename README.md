@@ -71,10 +71,6 @@ Projet actif, développé de manière itérative par phases documentées dans [`
 | Onglet Progression (graphiques, records) | 🚧 |
 | Chronomètre en arrière-plan (notification) | 🚧 |
 
-## 📄 Licence
-
-Ce projet est sous licence [MIT](LICENSE).
-
 ## Auteur
 
 Développé par [Samuel Gilot](https://github.com/SaamueI).
