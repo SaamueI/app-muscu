@@ -48,3 +48,9 @@ out*.xlsx
 # generated native folders
 /ios
 /android
+
+# license (garde en local, pas de licence explicite sur le depot public)
+LICENSE
+
+# config editeur Obsidian (etat local, pas de contenu projet)
+docs/.obsidian/
