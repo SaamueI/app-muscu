@@ -282,7 +282,7 @@ Fixes 01 (menu calendrier « Voir la séance planifiée »), 02 (annuler une sé
 
 ## GitHub
 
-Dépôt privé : https://github.com/SaamueI/app-muscu
+Dépôt public : https://github.com/SaamueI/app-muscu
 
 ```bash
 git add -A && git commit -m "..." && git push

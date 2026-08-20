@@ -41,7 +41,11 @@ src/
 docs/                   # Documentation d'implémentation par phase
 ```
 
-## 🚀 Installation
+## 📱 Installer l'APK (Android)
+
+Un APK autonome prêt à installer (pas besoin d'Expo Go ni de build) est disponible sur la page [Releases](https://github.com/SaamueI/app-muscu/releases/latest) — le télécharger sur le téléphone et l'installer en autorisant "sources inconnues".
+
+## 🚀 Installation (développement)
 
 ```bash
 git clone https://github.com/SaamueI/app-muscu.git
