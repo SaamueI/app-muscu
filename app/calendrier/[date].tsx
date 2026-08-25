@@ -1,4 +1,4 @@
-import { eq, inArray, like } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
