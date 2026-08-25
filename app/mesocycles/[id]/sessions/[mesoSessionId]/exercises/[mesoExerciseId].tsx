@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Alert,

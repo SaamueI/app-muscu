@@ -185,7 +185,7 @@ export default function ExerciceForm({ initial, onSubmit, submitLabel }: Props) 
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.8,
     });

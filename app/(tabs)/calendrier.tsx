@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, like } from 'drizzle-orm';
+import { and, inArray, isNotNull, isNull, like } from 'drizzle-orm';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useLayoutEffect, useState } from 'react';
 import {

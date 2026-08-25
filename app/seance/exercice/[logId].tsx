@@ -89,6 +89,8 @@ export default function ExerciceDetailLiveScreen() {
     setLocalNextSetNumber((found?.setLogs.length ?? 0) + 1);
   }, [logId]);
 
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
   // ─── Timer tick + auto-mode ───────────────────────────────────────────────
 
   useEffect(() => {

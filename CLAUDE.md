@@ -15,6 +15,8 @@ Application mobile React Native / Expo de suivi d'entraînement.
 | drizzle-orm | ^0.45.2 |
 | drizzle-kit | ^0.31.10 |
 
+**Typecheck** : `npx tsc --noEmit` doit rester à **0 erreur** (`noUnusedLocals` activé dans `tsconfig.json` — c'est ce qui rattrape les imports/variables morts laissés par une édition).
+
 **Lancer l'app** : `npx expo start --clear` (le `--clear` est nécessaire après toute nouvelle migration).
 
 **Ne jamais utiliser la preview navigateur (`expo start --web`) pour tester** : l'app dépend de fonctionnalités natives (expo-sqlite, expo-keep-awake, Alert, PanResponder…) qui ne se comportent pas fidèlement sur web. Toute vérification doit se faire sur device/émulateur via Expo Go — se limiter au typecheck (`npx tsc --noEmit`) et à la relecture de code quand aucun device n'est disponible, et le dire explicitement plutôt que de prétendre avoir testé.
@@ -174,6 +176,8 @@ Le store (`src/utils/activeSessionStore.ts`) est module-level (pas de Context). 
 
 - **FK sans `onDelete`** : `workoutSessions.calendarEventId`/`mesoSessionId` et `exerciseLogs.mesoExerciseId` référencent leur parent sans cascade (`ON DELETE NO ACTION`). Ne jamais faire de `db.delete` direct sur `mesoSessions`/`mesocycles`/`calendarEvents` — toujours passer par les helpers de détachement de `src/db/meso.ts` (`detachCalendarEventForMesoSession`, `detachMesoSessionHistory`, `deleteMesoSessionCascade`/`deleteMesocycleCascade`). Détails : [docs/phase-09-ancrage-calendaire.md](docs/phase-09-ancrage-calendaire.md).
 - **`Alert.alert` sur Android** : 3 boutons max — au-delà, les derniers sont silencieusement supprimés. Toujours découper en alertes imbriquées de ≤3 boutons plutôt que d'empiler les options.
+- **Route racine `/`** : `app/index.tsx` (`<Redirect href="/calendrier" />`) doit exister. Au démarrage d'un build standalone, expo-router résout l'URL initiale `muscuapp:///` → chemin `''` ; sans route servant `/`, il empile `+not-found` **par-dessus** les onglets (« Oops! this screen doesn't exist »). Invisible en dev : sous Expo Go l'URL initiale vaut `''` (falsy), donc React Navigation garde la route par défaut. Corollaire : **tout bug de navigation au démarrage est à tester en build release, pas en Expo Go**.
+- **Ne pas utiliser `expo-symbols` / `SymbolView`** : le composant est iOS-only (sur Android `requireNativeViewManager` n'est jamais appelé et il rend uniquement sa prop `fallback`, donc rien si elle est absente). Les icônes d'onglets passent par `@expo/vector-icons` (`MaterialIcons`) dans `app/(tabs)/_layout.tsx` ; `expo-symbols` a été désinstallé.
 - **`activeSessionStore`** : les helpers d'objectifs (`getTargetRestSeconds`, `getPrefillFromHistory`…) doivent prendre `setNumber`/`side` en paramètre explicite plutôt que de lire `getActiveSession()` implicitement — sinon un écran non actif peut écraser le timer d'un autre exercice réellement actif.
 
 ---
@@ -277,6 +281,19 @@ Backlog issu de `docs/Notes.md` — décisions déjà actées avec l'utilisateur
 Aucun correctif en attente actuellement.
 
 Fixes 01 (menu calendrier « Voir la séance planifiée »), 02 (annuler une séance commencée), 03 (header exercice live tappable), 04 (cohérence calendrier × date d'encodage), 05 (sections « Performances » vides) et 06 (suppression d'un exercice utilisé) implémentés. Fix 01 : `src/utils/plannedSessionRoute.ts` (`getPlannedSessionRoute`) résout `refType`/`refId` → route méso ou programme (fallback `program_session` si `refType` absent, cf. `startWorkoutSession`) ; entrée de menu dans `app/calendrier/[date].tsx` et `app/(tabs)/calendrier.tsx`. Fix 02/04 : migration 0012, `cancelWorkoutSession`/`startWorkoutSession` dans `src/db/session.ts`, `src/utils/startSessionFlow.ts` ; annulation sans confirmation supplémentaire si 0 série enregistrée (`confirmCancel` dans `app/seance/[sessionId].tsx`). Fix 03 : `app/seance/exercice/[logId].tsx` affiche le nom de l'exercice dans une `View` juste avant la section « Objectifs » (pas de header dynamique, pas de navigation). Fix 05 : `app/exercices/[id].tsx` et l'écran exercice de programme (`app/programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId].tsx`) utilisent `getPreviousPerfs`/`getUserWeightUnit` (`src/db/session.ts`) au lieu d'un placeholder statique / d'une requête filtrée sur `programExerciseId`. Fix 06 : `getExerciseUsage`/`deleteExerciseCascade` ajoutés à `src/db/exerciseMerge.ts` (aux côtés de `remapExercise`, phase 12) ; `app/exercices/[id].tsx` — `handleDelete` détecte les usages et propose Annuler / « Remplacer par… » (Modal + `ExercisePicker`, exclusion manuelle de l'exercice courant) / « Tout supprimer… » (double confirmation Android-safe, ≤3 boutons par alerte).
+
+---
+
+## Build APK Android (local)
+
+EAS Build (cloud) échoue silencieusement sur ce projet — probablement à cause des ~2600 fichiers d'assets exercices (102 Mo), trop lourd pour le pipeline gratuit. Builder en local à la place :
+
+```bash
+npx expo install --check   # vérifier les versions de deps avant de builder
+npx expo run:android --variant release
+```
+
+Nécessite Android Studio (SDK + `adb`) installé, `ANDROID_HOME` configuré, et un téléphone en USB avec débogage activé. APK généré dans `android/app/build/outputs/apk/release/app-release.apk`, à publier sur une [Release GitHub](https://github.com/SaamueI/app-muscu/releases/latest) (lien déjà dans le README).
 
 ---
 

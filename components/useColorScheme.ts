@@ -1,6 +1,6 @@
 import { useColorScheme as useColorSchemeCore } from 'react-native';
 
-export const useColorScheme = () => {
-  const coreScheme = useColorSchemeCore();
-  return coreScheme === 'unspecified' ? 'light' : coreScheme;
-};
+// React Native renvoie `null` / `undefined` tant que le thème système n'est pas
+// résolu ; on retombe sur 'light' pour que le retour soit toujours une clé
+// valide de `constants/Colors`.
+export const useColorScheme = (): 'light' | 'dark' => useColorSchemeCore() ?? 'light';

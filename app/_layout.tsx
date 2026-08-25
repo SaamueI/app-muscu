@@ -65,8 +65,8 @@ function RootLayoutNav() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="exercices/[id]" options={{ title: 'Exercice' }} />
         <Stack.Screen name="exercices/nouveau" options={{ title: 'Nouvel exercice' }} />
         <Stack.Screen name="exercices/reconcilier" options={{ title: 'Doublons d\'exercices', presentation: 'modal' }} />

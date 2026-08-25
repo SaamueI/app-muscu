@@ -26,7 +26,9 @@ const TYPE_LABELS: Record<string, string> = {
   other: 'Autre',
 };
 
-const STATUS_OPTIONS = [
+type EventStatus = 'planned' | 'completed' | 'skipped';
+
+const STATUS_OPTIONS: { key: EventStatus; label: string }[] = [
   { key: 'planned', label: 'Planifié' },
   { key: 'completed', label: 'Terminé' },
   { key: 'skipped', label: 'Annulé' },
@@ -39,7 +41,7 @@ export default function ModifierEvenementScreen() {
   const [event, setEvent] = useState<CalendarEvent | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState('planned');
+  const [status, setStatus] = useState<EventStatus>('planned');
 
   // Séance selection
   const [allPrograms, setAllPrograms] = useState<Program[]>([]);
