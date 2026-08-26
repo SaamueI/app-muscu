@@ -28,8 +28,12 @@ export function startPlannedSession(ev: CalendarEvent, onStarted: (sessionId: st
       {
         text: "Encoder aujourd'hui",
         onPress: async () => {
+          const originalDate = ev.date!;
           await db.update(calendarEvents).set({ date: today }).where(eq(calendarEvents.id, ev.id));
-          const sessionId = await startWorkoutSession({ calendarEventId: ev.id });
+          const sessionId = await startWorkoutSession({
+            calendarEventId: ev.id,
+            movedEventFromDate: originalDate,
+          });
           onStarted(sessionId);
         },
       },

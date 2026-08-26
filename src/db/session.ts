@@ -88,6 +88,7 @@ type StartParams = {
   mesoSessionId?: string;
   calendarEventId?: string;
   date?: string;
+  movedEventFromDate?: string;
 };
 
 export async function startWorkoutSession(params: StartParams): Promise<string> {
@@ -170,6 +171,7 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
     date: params.date ?? today,
     startedAt: now,
     createdEvent,
+    movedEventFromDate: params.movedEventFromDate ?? null,
   });
 
   // Initialiser les exercise_logs depuis le template
@@ -368,7 +370,10 @@ export async function cancelWorkoutSession(sessionId: string): Promise<void> {
   } else {
     await db
       .update(calendarEvents)
-      .set({ status: 'planned' })
+      .set({
+        status: 'planned',
+        ...(session.movedEventFromDate ? { date: session.movedEventFromDate } : {}),
+      })
       .where(eq(calendarEvents.id, session.calendarEventId));
   }
 
