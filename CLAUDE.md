@@ -119,6 +119,8 @@ Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.cr
 
 **Prochain `when` disponible** : > `1782700006000` (dernière migration : 0016).
 
+**Diagramme ER** : [docs/schema-diagramme.md](docs/schema-diagramme.md) (Mermaid, en code — pas besoin de le compiler). **Toute session qui modifie le schéma** (nouvelle colonne, nouvelle table, migration) doit le régénérer avant de terminer, à partir de `src/db/schema.ts` — comparer champ par champ avec la version existante plutôt que de tout réécrire à l'aveugle.
+
 ### Schéma (résumé)
 
 ```
