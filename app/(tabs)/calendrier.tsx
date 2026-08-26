@@ -1,3 +1,4 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { and, inArray, isNotNull, isNull, like } from 'drizzle-orm';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useLayoutEffect, useState } from 'react';
@@ -99,9 +100,14 @@ export default function CalendrierScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => router.push('/calendrier/event/nouveau')} style={{ marginRight: 4 }}>
-          <Text style={styles.headerBtn}>+</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginRight: 4 }}>
+          <Pressable onPress={() => router.push('/parametres')}>
+            <MaterialIcons name="settings" size={24} color="#007AFF" />
+          </Pressable>
+          <Pressable onPress={() => router.push('/calendrier/event/nouveau')}>
+            <Text style={styles.headerBtn}>+</Text>
+          </Pressable>
+        </View>
       ),
     });
   }, []);

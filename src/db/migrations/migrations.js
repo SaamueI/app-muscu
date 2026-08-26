@@ -15,6 +15,7 @@ import m0010 from './0010_workout_session_live.sql';
 import m0011 from './0011_meso_calendar_anchor.sql';
 import m0012 from './0012_workout_session_created_event.sql';
 import m0013 from './0013_workout_session_moved_from.sql';
+import m0014 from './0014_update_settings.sql';
 
   export default {
     journal,
@@ -32,6 +33,7 @@ m0009,
 m0010,
 m0011,
 m0012,
-m0013
+m0013,
+m0014
     }
   }

@@ -9,7 +9,12 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { db } from '../src/db';
 import migrations from '../src/db/migrations/migrations';
 import { seedExercises } from '../src/db/seed';
+import { getUpdatePrefs, setUpdatePrefs } from '../src/db/settings';
+import { checkForUpdate } from '../src/utils/updateCheck';
+import { showUpdateAvailableAlert } from '../src/utils/updateAlert';
 import ActiveSessionBanner from '../src/components/ActiveSessionBanner';
+
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -62,11 +67,29 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
+  useEffect(() => {
+    (async () => {
+      const prefs = await getUpdatePrefs();
+      if (!prefs.enabled) return;
+
+      const lastCheck = prefs.lastCheckAt ? new Date(prefs.lastCheckAt).getTime() : 0;
+      if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL_MS) return;
+
+      const result = await checkForUpdate();
+      await setUpdatePrefs({ lastCheckAt: new Date().toISOString() });
+
+      if (result.status === 'update-available' && result.latest.version !== prefs.skippedVersion) {
+        showUpdateAvailableAlert(result.latest);
+      }
+    })();
+  }, []);
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="parametres" options={{ title: 'Paramètres' }} />
         <Stack.Screen name="exercices/[id]" options={{ title: 'Exercice' }} />
         <Stack.Screen name="exercices/nouveau" options={{ title: 'Nouvel exercice' }} />
         <Stack.Screen name="exercices/reconcilier" options={{ title: 'Doublons d\'exercices', presentation: 'modal' }} />

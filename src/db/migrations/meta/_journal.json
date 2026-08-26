@@ -99,6 +99,13 @@
       "when": 1782700003000,
       "tag": "0013_workout_session_moved_from",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1782700004000,
+      "tag": "0014_update_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -278,6 +278,9 @@ export const restPresets = sqliteTable('rest_presets', {
 export const userSettings = sqliteTable('user_settings', {
   id: text('id').primaryKey().default('singleton'),
   weightUnit: text('weight_unit').notNull().default('kg'),
+  updateCheckEnabled: integer('update_check_enabled', { mode: 'boolean' }).notNull().default(true),
+  lastUpdateCheckAt: text('last_update_check_at'),
+  skippedVersion: text('skipped_version'),
 });
 
 export type MemorizedSet = {

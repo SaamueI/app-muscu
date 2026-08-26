@@ -318,6 +318,16 @@ npx expo run:android --variant release
 
 Nécessite Android Studio (SDK + `adb`) installé, `ANDROID_HOME` configuré, et un téléphone en USB avec débogage activé. APK généré dans `android/app/build/outputs/apk/release/app-release.apk`, à publier sur une [Release GitHub](https://github.com/SaamueI/app-muscu/releases/latest) (lien déjà dans le README).
 
+### Checklist de release (amélioration 09 — vérification de mise à jour)
+
+L'app compare `expo.version` (`app.json`) au `tag_name` de la dernière Release GitHub (`src/utils/updateCheck.ts`) pour détecter une mise à jour disponible. Cette détection **ne fonctionne que si le tag de la release est identique à `app.json`** — donc à chaque release :
+
+1. Bumper `expo.version` **et** `android.versionCode` dans `app.json`.
+2. Builder (`npx expo run:android --variant release`).
+3. Publier la Release GitHub en taguant avec **la même version** que `app.json` (`v1.0.2` pour `"version": "1.0.2"`).
+
+**Seul `app.json` fait foi** pour la version (c'est lui que lit `expo-constants`, donc `getAppVersion()`) : `package.json` a divergé (`1.0.0` vs `1.0.1` dans `app.json`) et ce n'est pas gênant, mais ne jamais se fier à `package.json` pour la comparaison de version.
+
 ---
 
 ## GitHub
