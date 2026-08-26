@@ -113,7 +113,7 @@ docs/
 
 Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.created_at`. Un `when` trop petit = migration silencieusement ignorée.
 
-**Prochain `when` disponible** : > `1782700002000` (dernière migration : 0012).
+**Prochain `when` disponible** : > `1782700004000` (dernière migration : 0014).
 
 ### Schéma (résumé)
 
@@ -163,6 +163,8 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0010 | workout_session_live | Colonnes séance live, tables rest_presets + user_settings, supersets, unités |
 | 0011 | meso_calendar_anchor | `calendar_events.ref_type` (+ backfill des lignes existantes) |
 | 0012 | workout_session_created_event | `workout_sessions.created_event` (fix 02, annulation de séance) |
+| 0013 | workout_session_moved_from | `workout_sessions.moved_event_from_date` (amélioration 07) |
+| 0014 | update_settings | `user_settings.update_check_enabled/last_update_check_at/skipped_version` (amélioration 09) |
 
 ---
 
@@ -291,17 +293,21 @@ Aucun correctif en attente actuellement.
 
 ## Améliorations en attente (6 à 10)
 
-Cinq plans détaillés dans [docs/ameliorations/](docs/ameliorations/README.md) — décisions déjà actées avec l'utilisateur, **lire le plan en entier avant d'implémenter**. Ordre recommandé : 07 → 08 → 09 → 10 → 06.
+Cinq plans détaillés dans [docs/ameliorations/](docs/ameliorations/README.md) — décisions déjà actées avec l'utilisateur, **lire le plan en entier avant d'implémenter**. 07, 08, 09 et 10 implémentés (branche `feature/ameliorations-07-a-10`) ; reste **06**.
 
-| # | Sujet | Impact DB |
-|---|---|---|
-| [06](docs/ameliorations/06-infos-exercice-seance.md) | Photos / variante / alternatives / notes sur les écrans séance planifiée (éditable) et live (lecture seule) | `meso_exercises.note` + ripple export/import |
-| [07](docs/ameliorations/07-annulation-date-seance.md) | Annuler une séance déplacée par « Encoder aujourd'hui » restaure sa date planifiée | `workout_sessions.moved_event_from_date` |
-| [08](docs/ameliorations/08-date-modifiable-evenement.md) | Date + mode « à la semaine » modifiables depuis l'écran de modification d'un événement | — |
-| [09](docs/ameliorations/09-verification-mise-a-jour.md) | Vérification de mise à jour (releases GitHub) + **nouvel écran `app/parametres.tsx`** | 3 colonnes sur `user_settings` |
-| [10](docs/ameliorations/10-signaler-bug-suggestion.md) | Signaler un bug / envoyer une suggestion par `mailto:` | — |
+| # | Sujet | Impact DB | Statut |
+|---|---|---|---|
+| [06](docs/ameliorations/06-infos-exercice-seance.md) | Photos / variante / alternatives / notes sur les écrans séance planifiée (éditable) et live (lecture seule) | `meso_exercises.note` + ripple export/import | à implémenter |
 
-Les numéros de migration sont attribués **au moment de l'implémentation** (les docs donnent le SQL, pas le numéro).
+Les numéros de migration sont attribués **au moment de l'implémentation** (les docs donnent le SQL, pas le numéro). Prochain `when` disponible : > `1782700004000` (dernière migration : 0014).
+
+**07 implémenté :** `workout_sessions.moved_event_from_date` (migration 0013) mémorise la date d'origine avant qu'« Encoder aujourd'hui » (`startSessionFlow.ts`) ne déplace l'événement ; `cancelWorkoutSession` (`src/db/session.ts`) la restaure à l'annulation. Une séance terminée n'est pas concernée.
+
+**08 implémenté :** bloc « Quand » (date précise / sans date fixe) extrait en composant partagé `src/components/WhenPickerField.tsx`, utilisé par `calendrier/event/nouveau.tsx` (rendu inchangé) et désormais par `calendrier/event/[eventId]/modifier.tsx`, qui permet enfin de changer la date d'un événement sans le recréer. `parseDateParam` déplacé dans `src/utils/dateUtils.ts`.
+
+**09 implémenté :** premier écran Paramètres (`app/parametres.tsx`, accès via icône ⚙ dans le header du calendrier) + vérification de mise à jour comparant `app.json` au tag de la dernière Release GitHub (`src/utils/updateCheck.ts`, `src/utils/appVersion.ts`) — auto au lancement (`app/_layout.tsx`, gardée par toggle + délai 24h) et bouton manuel. Migration 0014 : `user_settings.update_check_enabled/last_update_check_at/skipped_version`. Checklist de release ajoutée ci-dessus.
+
+**10 implémenté :** section « Aide » de `app/parametres.tsx` (Signaler un bug / Envoyer une suggestion) → `src/utils/feedback.ts`, `mailto:` prérempli avec diagnostic (version, plateforme, appareil), sans donnée d'entraînement. Repli presse-papier si aucun client mail.
 
 Fixes 01 (menu calendrier « Voir la séance planifiée »), 02 (annuler une séance commencée), 03 (header exercice live tappable), 04 (cohérence calendrier × date d'encodage), 05 (sections « Performances » vides) et 06 (suppression d'un exercice utilisé) implémentés. Fix 01 : `src/utils/plannedSessionRoute.ts` (`getPlannedSessionRoute`) résout `refType`/`refId` → route méso ou programme (fallback `program_session` si `refType` absent, cf. `startWorkoutSession`) ; entrée de menu dans `app/calendrier/[date].tsx` et `app/(tabs)/calendrier.tsx`. Fix 02/04 : migration 0012, `cancelWorkoutSession`/`startWorkoutSession` dans `src/db/session.ts`, `src/utils/startSessionFlow.ts` ; annulation sans confirmation supplémentaire si 0 série enregistrée (`confirmCancel` dans `app/seance/[sessionId].tsx`). Fix 03 : `app/seance/exercice/[logId].tsx` affiche le nom de l'exercice dans une `View` juste avant la section « Objectifs » (pas de header dynamique, pas de navigation). Fix 05 : `app/exercices/[id].tsx` et l'écran exercice de programme (`app/programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId].tsx`) utilisent `getPreviousPerfs`/`getUserWeightUnit` (`src/db/session.ts`) au lieu d'un placeholder statique / d'une requête filtrée sur `programExerciseId`. Fix 06 : `getExerciseUsage`/`deleteExerciseCascade` ajoutés à `src/db/exerciseMerge.ts` (aux côtés de `remapExercise`, phase 12) ; `app/exercices/[id].tsx` — `handleDelete` détecte les usages et propose Annuler / « Remplacer par… » (Modal + `ExercisePicker`, exclusion manuelle de l'exercice courant) / « Tout supprimer… » (double confirmation Android-safe, ≤3 boutons par alerte).
 
