@@ -24,6 +24,7 @@ export type MesoExerciseExport = {
   // Le mapping étiquette ⇄ supersetGroupId (UUID) est fait côté DB.
   supersetLabel: string | null;
   alternatives: string[]; // noms d'exercices
+  note: string | null; // note propre à l'exercice tel que planifié (amélioration 06)
   sets: MesoSetTarget[];
 };
 

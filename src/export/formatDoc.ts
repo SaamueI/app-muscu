@@ -43,6 +43,8 @@ ${describeColumns(MESO_CSV_COLS)}
 
 Les séances sont regroupées par (Semaine, Séance) : toutes les lignes d'une même séance, pour une même semaine, doivent se suivre dans le fichier.
 
+- Note séance : note générale de la séance, répétée sur chaque ligne de cette séance. Note exercice : propre à cet exercice précis, répétée sur chaque série de cet exercice. Les deux sont indépendantes.
+
 ${CONVENTIONS}
 
 Le fichier .xlsx (export ou modèle téléchargé) contient en plus un onglet « Méta » et des couleurs par séance — inutiles en .csv, qui ne contient que les données ci-dessus.

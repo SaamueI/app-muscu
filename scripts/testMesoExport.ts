@@ -30,6 +30,7 @@ function makeSession(
         selectedVariation: 'Barre',
         supersetLabel: 'A',
         alternatives: ['Développé haltères', 'Développé incliné'],
+        note: 'Attention à l\'épaule droite, ne pas descendre trop bas',
         sets: [
           { setNumber: 1, repsMin: 6, repsMax: 8, weightMin: 80, weightMax: 85, rirMin: 2, rirMax: 3, restSeconds: 180, durationSeconds: null, tempo: '3-1-1-0' },
           { setNumber: 2, repsMin: 6, repsMax: 8, weightMin: 80, weightMax: 85, rirMin: 1, rirMax: 2, restSeconds: 180, durationSeconds: null, tempo: '3-1-1-0' },
@@ -41,6 +42,7 @@ function makeSession(
         selectedVariation: null,
         supersetLabel: 'A',
         alternatives: [],
+        note: null,
         sets: [
           { setNumber: 1, repsMin: 12, repsMax: 15, weightMin: 15, weightMax: null, rirMin: 1, rirMax: 2, restSeconds: 90, durationSeconds: null, tempo: null },
         ],
@@ -51,6 +53,7 @@ function makeSession(
         selectedVariation: null,
         supersetLabel: null,
         alternatives: ['Planche latérale'],
+        note: null,
         sets: [],
       },
     ],

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 
 import { db } from './index';
 import {
@@ -43,6 +43,7 @@ export type ExerciseLogEnriched = {
   setLogs: (typeof setLogs.$inferSelect)[];
   mesoSets: (typeof mesoSets.$inferSelect)[];
   programExercise: typeof programExercises.$inferSelect | null;
+  mesoExercise: typeof mesoExercises.$inferSelect | null;
 };
 
 export type SessionLiveData = {
@@ -408,6 +409,7 @@ export async function getSessionLive(sessionId: string): Promise<SessionLiveData
 
     let msets: (typeof mesoSets.$inferSelect)[] = [];
     let pe: typeof programExercises.$inferSelect | null = null;
+    let me: typeof mesoExercises.$inferSelect | null = null;
 
     if (log.mesoExerciseId) {
       msets = await db
@@ -415,6 +417,11 @@ export async function getSessionLive(sessionId: string): Promise<SessionLiveData
         .from(mesoSets)
         .where(eq(mesoSets.mesoExerciseId, log.mesoExerciseId))
         .orderBy(asc(mesoSets.setNumber));
+      const [meRow] = await db
+        .select()
+        .from(mesoExercises)
+        .where(eq(mesoExercises.id, log.mesoExerciseId));
+      me = meRow ?? null;
     } else if (log.programExerciseId) {
       const [row] = await db
         .select()
@@ -423,10 +430,15 @@ export async function getSessionLive(sessionId: string): Promise<SessionLiveData
       pe = row ?? null;
     }
 
-    enriched.push({ log, exercise, setLogs: sets, mesoSets: msets, programExercise: pe });
+    enriched.push({ log, exercise, setLogs: sets, mesoSets: msets, programExercise: pe, mesoExercise: me });
   }
 
   return { session, exerciseLogs: enriched };
+}
+
+export async function getAlternativeExercises(ids: string[] | null): Promise<(typeof exercises.$inferSelect)[]> {
+  if (!ids || ids.length === 0) return [];
+  return db.select().from(exercises).where(inArray(exercises.id, ids));
 }
 
 // ─── Historique des performances d'un exercice ───────────────────────────────

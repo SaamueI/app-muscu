@@ -29,6 +29,7 @@ export const MESO_CSV_COLS: CsvCol[] = [
   { key: 'variation', header: 'Variation' },
   { key: 'superset', header: 'Superset' },
   { key: 'alternatives', header: 'Alternatives' },
+  { key: 'noteExercice', header: 'Note exercice' },
   { key: 'serie', header: 'Série' },
   { key: 'repsMin', header: 'Reps min' },
   { key: 'repsMax', header: 'Reps max' },
@@ -56,6 +57,7 @@ export function mesoToCsv(data: MesocycleExport): string {
         variation: ex.selectedVariation ?? '',
         superset: ex.supersetLabel ?? '',
         alternatives: ex.alternatives.join(' ; '),
+        noteExercice: ex.note ?? '',
         note: s.note ?? '',
       };
       const pushRow = (extra: Row) => {
@@ -166,6 +168,7 @@ export function parseMesoCsv(csvText: string, importName: string): MesocycleExpo
         selectedVariation: variation,
         supersetLabel: superset,
         alternatives: parseAlternatives(r.alternatives),
+        note: r.noteExercice ? String(r.noteExercice).trim() : null,
         sets: [],
       };
       curSession!.exercises.push(curExo);

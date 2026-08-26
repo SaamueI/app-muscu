@@ -50,6 +50,7 @@ const COLS: Col[] = [
   { key: 'variation', header: 'Variation', w: 16 },
   { key: 'superset', header: 'Superset', w: 9, center: true },
   { key: 'alternatives', header: 'Alternatives', w: 26 },
+  { key: 'noteExercice', header: 'Note exercice', w: 24 },
   { key: 'serie', header: 'Série', w: 7, center: true },
   { key: 'repsMin', header: 'Reps min', w: 9, center: true },
   { key: 'repsMax', header: 'Reps max', w: 9, center: true },
@@ -82,6 +83,7 @@ function buildDataRows(data: MesocycleExport): Row[] {
         variation: ex.selectedVariation ?? '',
         superset: ex.supersetLabel ?? '',
         alternatives: ex.alternatives.join(' ; '),
+        noteExercice: ex.note ?? '',
         note: s.note ?? '',
         _ordreSeance: s.order,
         _ordreExo: exIdx,
@@ -314,6 +316,7 @@ export function parseMesoWorkbook(input: ParseInput): MesocycleExport {
           .split(';')
           .map((x) => x.trim())
           .filter(Boolean),
+        note: r.noteExercice ? String(r.noteExercice).trim() : null,
         sets: [],
       };
       if (!exo.exerciseName) {

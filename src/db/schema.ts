@@ -229,6 +229,7 @@ export const mesoExercises = sqliteTable('meso_exercises', {
   order: integer('order').notNull(),
   selectedVariation: text('selected_variation'),
   supersetGroupId: text('superset_group_id'),
+  note: text('note'),
 });
 
 // ─── MesoSet (objectifs par série) ────────────────────────────────────────────

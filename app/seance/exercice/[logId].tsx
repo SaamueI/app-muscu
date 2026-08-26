@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { ExerciseImageCarousel } from '../../../src/components/ExerciseImageCarousel';
 import GlobalRestBanner from '../../../src/components/GlobalRestBanner';
 import RestPresetPicker from '../../../src/components/RestPresetPicker';
 import SetPerformanceModal from '../../../src/components/SetPerformanceModal';
@@ -20,6 +21,7 @@ import { db } from '../../../src/db';
 import { exerciseLogs, exercises, setLogs } from '../../../src/db/schema';
 import {
   deleteSetLog,
+  getAlternativeExercises,
   getPreviousPerfs,
   getRestPresets,
   getSessionLive,
@@ -47,6 +49,8 @@ export default function ExerciceDetailLiveScreen() {
   const router = useRouter();
 
   const [enriched, setEnriched] = useState<ExerciseLogEnriched | null>(null);
+  const [alternatives, setAlternatives] = useState<(typeof exercises.$inferSelect)[]>([]);
+  const [infoExpanded, setInfoExpanded] = useState(false);
   const [history, setHistory] = useState<PerfGroup[]>([]);
   const [presets, setPresets] = useState<RestPreset[]>([]);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
@@ -75,6 +79,12 @@ export default function ExerciceDetailLiveScreen() {
     const liveData = await getSessionLive(logRow.log.workoutSessionId);
     const found = liveData?.exerciseLogs.find((el) => el.log.id === logId) ?? null;
     setEnriched(found);
+
+    const altIds =
+      (found?.mesoExercise?.alternativeExerciseIds as string[] | null) ??
+      (found?.programExercise?.alternativeExerciseIds as string[] | null) ??
+      null;
+    setAlternatives(await getAlternativeExercises(altIds));
 
     const perfs = await getPreviousPerfs(logRow.log.exerciseId, 5, logRow.log.workoutSessionId);
     setHistory(perfs);
@@ -403,6 +413,64 @@ export default function ExerciceDetailLiveScreen() {
           <Text style={styles.exerciseName}>{enriched.exercise.name}</Text>
         </View>
 
+        {/* ── Infos exercice (repliée par défaut, lecture seule) ── */}
+        <Pressable style={styles.infoToggle} onPress={() => setInfoExpanded((v) => !v)}>
+          <Text style={styles.infoToggleText}>Infos exercice {infoExpanded ? '▾' : '▸'}</Text>
+        </Pressable>
+        {infoExpanded && (
+          <View style={styles.section}>
+            <ExerciseImageCarousel
+              exerciseId={enriched.exercise.id}
+              customImageUris={enriched.exercise.customImageUris as string[] | null}
+            />
+            <View style={styles.tagsRow}>
+              {enriched.exercise.level && <Text style={styles.tag}>{enriched.exercise.level}</Text>}
+              {enriched.exercise.category && <Text style={styles.tag}>{enriched.exercise.category}</Text>}
+              {enriched.exercise.equipment && <Text style={styles.tag}>{enriched.exercise.equipment}</Text>}
+            </View>
+
+            {(enriched.mesoExercise || enriched.programExercise) && (
+              <>
+                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Variante</Text>
+                <Text style={styles.infoText}>
+                  {enriched.mesoExercise?.selectedVariation ?? enriched.programExercise?.selectedVariation ?? 'Aucune variante sélectionnée'}
+                </Text>
+
+                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Exercices alternatifs</Text>
+                {alternatives.length === 0 ? (
+                  <Text style={styles.infoText}>Aucun exercice alternatif</Text>
+                ) : (
+                  <View style={styles.altRow}>
+                    {alternatives.map((a) => (
+                      <Pressable
+                        key={a.id}
+                        style={styles.altChip}
+                        onPress={() => router.push(`/exercices/${a.id}`)}
+                      >
+                        <Text style={styles.altChipText}>{a.name}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {enriched.mesoExercise?.note ? (
+              <>
+                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Note de la séance planifiée</Text>
+                <Text style={styles.infoText}>{enriched.mesoExercise.note}</Text>
+              </>
+            ) : null}
+
+            {enriched.exercise.notes ? (
+              <>
+                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Note de l'exercice</Text>
+                <Text style={[styles.infoText, styles.catalogNoteText]}>{enriched.exercise.notes}</Text>
+              </>
+            ) : null}
+          </View>
+        )}
+
         {/* ── Objectifs ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Objectifs</Text>
@@ -664,6 +732,22 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F2F7' },
   exerciseNameRow: { paddingHorizontal: 4 },
   exerciseName: { fontSize: 20, fontWeight: '700', color: '#1C1C1E' },
+  infoToggle: { paddingHorizontal: 4, paddingVertical: 2 },
+  infoToggleText: { fontSize: 14, color: '#007AFF', fontWeight: '500' },
+  infoSubTitle: { marginTop: 12 },
+  infoText: { fontSize: 15, color: '#1C1C1E' },
+  catalogNoteText: { color: '#8E8E93' },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: {
+    fontSize: 12, color: '#555', backgroundColor: '#e8e8e8',
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+  },
+  altRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  altChip: {
+    backgroundColor: '#e8f0fe', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  altChipText: { color: '#007AFF', fontSize: 13, fontWeight: '500' },
   loading: { textAlign: 'center', marginTop: 40, color: '#8E8E93' },
   scroll: { padding: 16, gap: 16, paddingBottom: 40 },
   section: {

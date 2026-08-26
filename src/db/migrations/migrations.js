@@ -17,6 +17,7 @@ import m0012 from './0012_workout_session_created_event.sql';
 import m0013 from './0013_workout_session_moved_from.sql';
 import m0014 from './0014_update_settings.sql';
 import m0015 from './0015_update_settings_fix.sql';
+import m0016 from './0016_meso_exercise_note.sql';
 
   export default {
     journal,
@@ -36,6 +37,7 @@ m0011,
 m0012,
 m0013,
 m0014,
-m0015
+m0015,
+m0016
     }
   }

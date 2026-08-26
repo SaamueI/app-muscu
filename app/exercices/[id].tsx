@@ -1,11 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Alert,
-  Dimensions,
-  FlatList,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ExercisePicker from '../../src/components/ExercisePicker';
+import { ExerciseImageCarousel } from '../../src/components/ExerciseImageCarousel';
 import { db } from '../../src/db';
 import {
   deleteExerciseCascade,
@@ -23,7 +21,6 @@ import {
   remapExercise,
   type ExerciseUsage,
 } from '../../src/db/exerciseMerge';
-import exerciseImages from '../../src/db/exerciseImages';
 import { exercises, setLogs } from '../../src/db/schema';
 import { getPreviousPerfs, getUserWeightUnit, type PerfGroup } from '../../src/db/session';
 import { formatWeight } from '../../src/utils/weightUtils';
@@ -31,14 +28,10 @@ import { formatWeight } from '../../src/utils/weightUtils';
 type Exercise = typeof exercises.$inferSelect;
 type SetLogRow = typeof setLogs.$inferSelect;
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-
 export default function ExerciceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [exercise, setExercise] = useState<Exercise | null>(null);
-  const [imageIndex, setImageIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
   const [history, setHistory] = useState<PerfGroup[]>([]);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [showReplacePicker, setShowReplacePicker] = useState(false);
@@ -146,49 +139,17 @@ export default function ExerciceDetailScreen() {
     );
   }
 
-  // Merge static images (predefined exercises) and custom URIs
-  const staticImages: Array<{ type: 'static'; source: number }> =
-    (exerciseImages[exercise.id] ?? []).map((source) => ({ type: 'static', source }));
-  const customImages: Array<{ type: 'uri'; source: string }> =
-    ((exercise.customImageUris as string[] | null) ?? []).map((uri) => ({ type: 'uri', source: uri }));
-  const allImages = [...staticImages, ...customImages];
-
   const description = exercise.description?.split('\n\n') ?? [];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
       {/* ── Carousel swipeable ── */}
-      {allImages.length > 0 ? (
-        <View style={styles.carouselContainer}>
-          <FlatList
-            ref={flatListRef}
-            data={allImages}
-            keyExtractor={(_, i) => String(i)}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(e) => {
-              const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-              setImageIndex(index);
-            }}
-            renderItem={({ item }) => (
-              <Image
-                source={item.type === 'static' ? item.source : { uri: item.source }}
-                style={styles.carouselImage}
-                resizeMode="contain"
-              />
-            )}
-          />
-          {allImages.length > 1 && (
-            <View style={styles.dots}>
-              {allImages.map((_, i) => (
-                <View key={i} style={[styles.dot, i === imageIndex && styles.dotActive]} />
-              ))}
-            </View>
-          )}
-        </View>
-      ) : null}
+      <ExerciseImageCarousel
+        exerciseId={exercise.id}
+        customImageUris={exercise.customImageUris as string[] | null}
+        height={240}
+      />
 
       {/* ── Nom + tags ── */}
       <Text style={styles.name}>{exercise.name}</Text>
@@ -346,12 +307,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f2f2f7' },
   content: { paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  carouselContainer: { backgroundColor: '#fff' },
-  carouselImage: { width: SCREEN_WIDTH, height: 240 },
-  dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingVertical: 10 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ddd' },
-  dotActive: { backgroundColor: '#007AFF', width: 18 },
 
   name: { fontSize: 22, fontWeight: '700', margin: 16, marginBottom: 8 },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, marginBottom: 12 },

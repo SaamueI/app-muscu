@@ -75,6 +75,7 @@ export async function loadMesocycleForExport(
         selectedVariation: ex.selectedVariation,
         supersetLabel: labels[i],
         alternatives: ((ex.alternativeExerciseIds as string[] | null) ?? []).map(nameOf),
+        note: ex.note,
         sets: sets.map((st) => ({
           setNumber: st.setNumber,
           repsMin: st.targetRepsMin,
@@ -188,6 +189,7 @@ export async function importMesocycle(data: MesocycleExport): Promise<ImportResu
         order: i,
         selectedVariation: ex.selectedVariation,
         supersetGroupId: groupIds[i],
+        note: ex.note,
       });
 
       for (const st of ex.sets) {

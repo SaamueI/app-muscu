@@ -26,6 +26,7 @@ export const SAMPLE_MESOCYCLE: MesocycleExport = {
           selectedVariation: 'Barre',
           supersetLabel: 'A',
           alternatives: ['Développé haltères'],
+          note: 'Garder les coudes à 45°, ne pas verrouiller en haut',
           sets: [
             { setNumber: 1, repsMin: 6, repsMax: 8, weightMin: 60, weightMax: 70, rirMin: 1, rirMax: 2, restSeconds: 120, durationSeconds: null, tempo: '3-1-1-0' },
             { setNumber: 2, repsMin: 6, repsMax: 8, weightMin: 60, weightMax: 70, rirMin: 1, rirMax: 2, restSeconds: 120, durationSeconds: null, tempo: '3-1-1-0' },
@@ -36,6 +37,7 @@ export const SAMPLE_MESOCYCLE: MesocycleExport = {
           selectedVariation: null,
           supersetLabel: 'A',
           alternatives: [],
+          note: null,
           sets: [
             { setNumber: 1, repsMin: 12, repsMax: 15, weightMin: 10, weightMax: 12, rirMin: 1, rirMax: 2, restSeconds: 60, durationSeconds: null, tempo: null },
           ],
@@ -45,6 +47,7 @@ export const SAMPLE_MESOCYCLE: MesocycleExport = {
           selectedVariation: null,
           supersetLabel: null,
           alternatives: [],
+          note: null,
           sets: [
             { setNumber: 1, repsMin: 10, repsMax: 12, weightMin: 12, weightMax: 14, rirMin: 2, rirMax: 3, restSeconds: 90, durationSeconds: null, tempo: null },
           ],
@@ -64,6 +67,7 @@ export const SAMPLE_MESOCYCLE: MesocycleExport = {
           selectedVariation: null,
           supersetLabel: null,
           alternatives: [],
+          note: null,
           sets: [
             { setNumber: 1, repsMin: 8, repsMax: 10, weightMin: 50, weightMax: 55, rirMin: 1, rirMax: 2, restSeconds: 90, durationSeconds: null, tempo: null },
           ],

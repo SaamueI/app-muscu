@@ -1,11 +1,9 @@
 import { eq, inArray } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   Alert,
-  Dimensions,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,10 +14,8 @@ import {
   View,
 } from 'react-native';
 
-import exerciseImages from '../../../../../../src/db/exerciseImages';
+import { ExerciseImageCarousel } from '../../../../../../src/components/ExerciseImageCarousel';
 import { consumePendingAlt } from '../../../../../../src/utils/altPickerStore';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 import { db } from '../../../../../../src/db';
 import {
@@ -44,8 +40,6 @@ export default function ProgramExerciceDetailScreen() {
   const navigation = useNavigation();
 
   const [pe, setPe] = useState<ProgramExercise | null>(null);
-  const [imageIndex, setImageIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [alternatives, setAlternatives] = useState<Exercise[]>([]);
   const [history, setHistory] = useState<PerfGroup[]>([]);
@@ -219,41 +213,10 @@ export default function ProgramExerciceDetailScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
         {/* Carousel photos */}
-        {(() => {
-          const staticImgs = (exerciseImages[exercise.id] ?? []).map((s) => ({ type: 'static' as const, source: s }));
-          const customImgs = ((exercise.customImageUris as string[] | null) ?? []).map((u) => ({ type: 'uri' as const, source: u }));
-          const allImgs = [...staticImgs, ...customImgs];
-          if (allImgs.length === 0) return null;
-          return (
-            <View style={styles.carouselContainer}>
-              <FlatList
-                ref={flatListRef}
-                data={allImgs}
-                keyExtractor={(_, i) => String(i)}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={(e) => {
-                  setImageIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH));
-                }}
-                renderItem={({ item }) => (
-                  <Image
-                    source={item.type === 'static' ? item.source : { uri: item.source }}
-                    style={styles.carouselImage}
-                    resizeMode="contain"
-                  />
-                )}
-              />
-              {allImgs.length > 1 && (
-                <View style={styles.dots}>
-                  {allImgs.map((_, i) => (
-                    <View key={i} style={[styles.dot, i === imageIndex && styles.dotActive]} />
-                  ))}
-                </View>
-              )}
-            </View>
-          );
-        })()}
+        <ExerciseImageCarousel
+          exerciseId={exercise.id}
+          customImageUris={exercise.customImageUris as string[] | null}
+        />
 
         {/* Nom exercice + tags */}
         <View style={styles.section}>
@@ -517,12 +480,6 @@ const styles = StyleSheet.create({
     fontSize: 12, color: '#555', backgroundColor: '#e8e8e8',
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
   },
-
-  carouselContainer: { backgroundColor: '#fff' },
-  carouselImage: { width: SCREEN_WIDTH, height: 220 },
-  dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingVertical: 8 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ddd' },
-  dotActive: { backgroundColor: '#007AFF', width: 18 },
 
   altChip: {
     backgroundColor: '#e8f0fe',
