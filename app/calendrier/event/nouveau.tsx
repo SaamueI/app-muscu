@@ -14,10 +14,9 @@ import {
 
 import { db } from '../../../src/db';
 import { calendarEvents, programSessions, programs } from '../../../src/db/schema';
-import { DatePickerField } from '../../../src/components/DatePickerField';
-import { WeekPickerField } from '../../../src/components/WeekPickerField';
+import { WhenPickerField } from '../../../src/components/WhenPickerField';
 import { generateId } from '../../../src/utils/generateId';
-import { dateToIsoWeek, toDateStr } from '../../../src/utils/dateUtils';
+import { dateToIsoWeek, parseDateParam, toDateStr } from '../../../src/utils/dateUtils';
 
 type Program = typeof programs.$inferSelect;
 type ProgramSession = typeof programSessions.$inferSelect;
@@ -29,13 +28,6 @@ const EVENT_TYPES = [
   { key: 'competition', label: 'Compétition' },
   { key: 'other', label: 'Autre' },
 ];
-
-function parseDateParam(dateStr?: string): Date | null {
-  if (!dateStr) return null;
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return isNaN(date.getTime()) ? null : date;
-}
 
 export default function NouvelEvenementScreen() {
   const { date } = useLocalSearchParams<{ date?: string }>();
@@ -111,6 +103,7 @@ export default function NouvelEvenementScreen() {
       date: eventDate,
       week: eventWeek,
       refId: type === 'workout_session' ? (selectedSessionId ?? null) : null,
+      refType: type === 'workout_session' && selectedSessionId ? 'program_session' : null,
       title: title.trim(),
       description: description.trim() || null,
     });
@@ -207,48 +200,17 @@ export default function NouvelEvenementScreen() {
           </View>
         )}
 
-        {/* Sélecteur de mode : date précise / semaine */}
+        {/* Quand : date précise ou sans date fixe (à la semaine) */}
         <View style={styles.section}>
           <Text style={styles.label}>Quand</Text>
-          <View style={styles.modeRow}>
-            <Pressable
-              style={[styles.modeCard, eventMode === 'dated' && styles.modeCardActive]}
-              onPress={() => setEventMode('dated')}
-            >
-              <Text style={[styles.modeCardTitle, eventMode === 'dated' && styles.modeCardTitleActive]}>
-                Date précise
-              </Text>
-              <Text style={[styles.modeCardSub, eventMode === 'dated' && styles.modeCardSubActive]}>
-                Événement un jour donné
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modeCard, eventMode === 'undated' && styles.modeCardActive]}
-              onPress={() => setEventMode('undated')}
-            >
-              <Text style={[styles.modeCardTitle, eventMode === 'undated' && styles.modeCardTitleActive]}>
-                Sans date fixe
-              </Text>
-              <Text style={[styles.modeCardSub, eventMode === 'undated' && styles.modeCardSubActive]}>
-                Planifié à la semaine
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Date picker ou semaine selon le mode */}
-        <View style={styles.section}>
-          {eventMode === 'dated' ? (
-            <>
-              <Text style={styles.label}>Date</Text>
-              <DatePickerField value={selectedDate} onChange={setSelectedDate} />
-            </>
-          ) : (
-            <>
-              <Text style={styles.label}>Semaine</Text>
-              <WeekPickerField value={selectedWeek} onChange={setSelectedWeek} />
-            </>
-          )}
+          <WhenPickerField
+            mode={eventMode}
+            onModeChange={setEventMode}
+            date={selectedDate}
+            onDateChange={setSelectedDate}
+            week={selectedWeek}
+            onWeekChange={setSelectedWeek}
+          />
         </View>
 
         <Pressable
@@ -314,17 +276,6 @@ const styles = StyleSheet.create({
   sessionName: { flex: 1, fontSize: 14, color: '#333' },
   checkmark: { fontSize: 14, color: '#007AFF', fontWeight: '700' },
   emptyText: { fontSize: 14, color: '#aaa', fontStyle: 'italic', paddingVertical: 8 },
-
-  modeRow: { flexDirection: 'row', gap: 10 },
-  modeCard: {
-    flex: 1, borderRadius: 10, padding: 12, alignItems: 'center',
-    backgroundColor: '#f5f5f5', borderWidth: 2, borderColor: 'transparent',
-  },
-  modeCardActive: { borderColor: '#007AFF', backgroundColor: '#EBF3FF' },
-  modeCardTitle: { fontSize: 14, fontWeight: '700', color: '#444', marginBottom: 3 },
-  modeCardTitleActive: { color: '#007AFF' },
-  modeCardSub: { fontSize: 11, color: '#999', textAlign: 'center' },
-  modeCardSubActive: { color: '#5b9cf6' },
 
   createBtn: {
     backgroundColor: '#007AFF', marginHorizontal: 12, marginTop: 16,

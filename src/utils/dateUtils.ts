@@ -20,6 +20,14 @@ export function formatShortDate(dateStr: string): string {
   return `${SHORT_DAY_NAMES[d.getDay()]} ${d.getDate()} ${SHORT_MONTH_NAMES[d.getMonth()]}`;
 }
 
+// Parse une date "YYYY-MM-DD" (param de route ou colonne DB) en Date locale.
+export function parseDateParam(dateStr?: string | null): Date | null {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return isNaN(date.getTime()) ? null : date;
+}
+
 export function addDays(d: Date, n: number): Date {
   const result = new Date(d);
   result.setDate(result.getDate() + n);

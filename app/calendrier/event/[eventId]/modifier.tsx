@@ -14,10 +14,13 @@ import {
 
 import { db } from '../../../../src/db';
 import { calendarEvents, mesoSessions, programSessions, programs } from '../../../../src/db/schema';
+import { WhenPickerField } from '../../../../src/components/WhenPickerField';
+import { dateToIsoWeek, parseDateParam, toDateStr } from '../../../../src/utils/dateUtils';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 type Program = typeof programs.$inferSelect;
 type ProgramSession = typeof programSessions.$inferSelect;
+type EventMode = 'dated' | 'undated';
 
 const TYPE_LABELS: Record<string, string> = {
   workout_session: 'Séance',
@@ -43,6 +46,11 @@ export default function ModifierEvenementScreen() {
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<EventStatus>('planned');
 
+  // Quand : date précise ou sans date fixe (à la semaine)
+  const [eventMode, setEventMode] = useState<EventMode>('dated');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState(() => dateToIsoWeek(new Date()));
+
   // Séance selection
   const [allPrograms, setAllPrograms] = useState<Program[]>([]);
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
@@ -63,6 +71,14 @@ export default function ModifierEvenementScreen() {
         setTitle(ev.title ?? '');
         setDescription(ev.description ?? '');
         setStatus(ev.status ?? 'planned');
+
+        if (ev.date) {
+          setEventMode('dated');
+          setSelectedDate(parseDateParam(ev.date));
+        } else {
+          setEventMode('undated');
+          setSelectedWeek(ev.week ?? dateToIsoWeek(new Date()));
+        }
 
         if (ev.type === 'workout_session') {
           if (ev.refType === 'meso_session' && ev.refId) {
@@ -113,7 +129,7 @@ export default function ModifierEvenementScreen() {
   };
 
   const handleSave = async () => {
-    if (!title.trim() || !eventId) return;
+    if (!canSave || !eventId) return;
     const isMesoLinked = event?.refType === 'meso_session';
     await db
       .update(calendarEvents)
@@ -121,6 +137,8 @@ export default function ModifierEvenementScreen() {
         title: title.trim(),
         description: description.trim() || null,
         status,
+        date: eventMode === 'dated' && selectedDate ? toDateStr(selectedDate) : null,
+        week: eventMode === 'undated' ? selectedWeek : null,
         ...(isMesoLinked
           ? {}
           : {
@@ -132,7 +150,7 @@ export default function ModifierEvenementScreen() {
     router.back();
   };
 
-  const canSave = title.trim().length > 0;
+  const canSave = title.trim().length > 0 && (eventMode === 'undated' || selectedDate !== null);
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -176,6 +194,24 @@ export default function ModifierEvenementScreen() {
               </Pressable>
             ))}
           </View>
+        </View>
+
+        {/* Quand : date précise ou sans date fixe (à la semaine) */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Quand</Text>
+          <WhenPickerField
+            mode={eventMode}
+            onModeChange={setEventMode}
+            date={selectedDate}
+            onDateChange={setSelectedDate}
+            week={selectedWeek}
+            onWeekChange={setSelectedWeek}
+          />
+          {event?.refType === 'meso_session' && (
+            <Text style={[styles.readOnlyText, { fontSize: 12, color: '#aaa', marginTop: 10 }]}>
+              Liée à un mésocycle ancré — un ré-ancrage du mésocycle replacera cette séance à sa date théorique.
+            </Text>
+          )}
         </View>
 
         {/* Type (lecture seule) */}
