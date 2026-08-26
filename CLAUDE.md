@@ -113,7 +113,9 @@ docs/
 
 Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.created_at`. Un `when` trop petit = migration silencieusement ignorée.
 
-**Prochain `when` disponible** : > `1782700004000` (dernière migration : 0014).
+**Piège découvert avec la migration 0014 (plusieurs `ALTER TABLE` dans un même fichier) :** le migrateur Expo/Drizzle (`node_modules/drizzle-orm/expo-sqlite/migrator.js`) ne découpe un fichier `.sql` en instructions séparées que sur le marqueur littéral `--> statement-breakpoint`. Sans ce marqueur, tout le fichier est envoyé en un seul bloc à `NativeDatabase.prepareSync`, qui ne compile et n'exécute **que la toute première instruction** — les suivantes sont silencieusement ignorées, sans erreur, et la migration est quand même marquée comme appliquée. Toujours séparer chaque instruction SQL par une ligne `--> statement-breakpoint` dès qu'un fichier de migration en contient plus d'une (voir `0010_workout_session_live.sql` ou `0011_meso_calendar_anchor.sql` pour l'exemple). Un fichier à une seule instruction n'en a pas besoin.
+
+**Prochain `when` disponible** : > `1782700005000` (dernière migration : 0015).
 
 ### Schéma (résumé)
 
@@ -164,7 +166,8 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0011 | meso_calendar_anchor | `calendar_events.ref_type` (+ backfill des lignes existantes) |
 | 0012 | workout_session_created_event | `workout_sessions.created_event` (fix 02, annulation de séance) |
 | 0013 | workout_session_moved_from | `workout_sessions.moved_event_from_date` (amélioration 07) |
-| 0014 | update_settings | `user_settings.update_check_enabled/last_update_check_at/skipped_version` (amélioration 09) |
+| 0014 | update_settings | `user_settings.update_check_enabled` (amélioration 09) |
+| 0015 | update_settings_fix | `user_settings.last_update_check_at` + `skipped_version` — suite de la 0014, qui n'ajoutait que la première colonne (piège multi-instructions, voir ci-dessus) |
 
 ---
 
@@ -305,7 +308,7 @@ Les numéros de migration sont attribués **au moment de l'implémentation** (le
 
 **08 implémenté :** bloc « Quand » (date précise / sans date fixe) extrait en composant partagé `src/components/WhenPickerField.tsx`, utilisé par `calendrier/event/nouveau.tsx` (rendu inchangé) et désormais par `calendrier/event/[eventId]/modifier.tsx`, qui permet enfin de changer la date d'un événement sans le recréer. `parseDateParam` déplacé dans `src/utils/dateUtils.ts`.
 
-**09 implémenté :** premier écran Paramètres (`app/parametres.tsx`, accès via icône ⚙ dans le header du calendrier) + vérification de mise à jour comparant `app.json` au tag de la dernière Release GitHub (`src/utils/updateCheck.ts`, `src/utils/appVersion.ts`) — auto au lancement (`app/_layout.tsx`, gardée par toggle + délai 24h) et bouton manuel. Migration 0014 : `user_settings.update_check_enabled/last_update_check_at/skipped_version`. Checklist de release ajoutée ci-dessus.
+**09 implémenté :** premier écran Paramètres (`app/parametres.tsx`, accès via icône ⚙ dans le header du calendrier) + vérification de mise à jour comparant `app.json` au tag de la dernière Release GitHub (`src/utils/updateCheck.ts`, `src/utils/appVersion.ts`) — auto au lancement (`app/_layout.tsx`, gardée par toggle + délai 24h) et bouton manuel. Migrations 0014 + 0015 : `user_settings.update_check_enabled/last_update_check_at/skipped_version` (en 2 fichiers suite au piège multi-instructions documenté ci-dessus). Checklist de release ajoutée ci-dessus.
 
 **10 implémenté :** section « Aide » de `app/parametres.tsx` (Signaler un bug / Envoyer une suggestion) → `src/utils/feedback.ts`, `mailto:` prérempli avec diagnostic (version, plateforme, appareil), sans donnée d'entraînement. Repli presse-papier si aucun client mail.
 

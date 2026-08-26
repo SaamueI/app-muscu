@@ -26,9 +26,9 @@ Plans d'implémentation issus de `Default/Améliorations app muscu.md` (backlog 
 
 ## Numéros de migration
 
-Trois points touchent la DB : **06** (`meso_exercises.note`, restant), **07** (`workout_sessions.moved_event_from_date`, migration **0013**) et **09** (3 colonnes sur `user_settings`, migration **0014**).
+Trois points touchent la DB : **06** (`meso_exercises.note`, restant), **07** (`workout_sessions.moved_event_from_date`, migration **0013**) et **09** (3 colonnes sur `user_settings`, migrations **0014** + **0015**).
 
-Les documents donnent le **SQL**, pas le numéro : celui-ci s'attribue au moment de l'implémentation, dans l'ordre réel. Dernière migration appliquée : **0014** (`when` = `1782700004000`). Rappel de la règle critique (`CLAUDE.md`) : `drizzle-kit generate` est cassé sur ce projet, les migrations s'écrivent **à la main** (fichier `.sql` + import dans `migrations.js` + entrée dans `meta/_journal.json` avec un `when` **strictement supérieur** au précédent).
+Les documents donnent le **SQL**, pas le numéro : celui-ci s'attribue au moment de l'implémentation, dans l'ordre réel. Dernière migration appliquée : **0015** (`when` = `1782700005000`). Rappel de la règle critique (`CLAUDE.md`) : `drizzle-kit generate` est cassé sur ce projet, les migrations s'écrivent **à la main** (fichier `.sql` + import dans `migrations.js` + entrée dans `meta/_journal.json` avec un `when` **strictement supérieur** au précédent) — et **toujours séparer plusieurs instructions par `--> statement-breakpoint`**, sinon seule la première s'exécute silencieusement (piège rencontré sur la migration 0014, voir CLAUDE.md).
 
 ## Contraintes transverses
 
