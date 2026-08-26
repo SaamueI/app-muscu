@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import * as Clipboard from 'expo-clipboard';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,7 +17,6 @@ import { getUpdatePrefs, setUpdatePrefs } from '../src/db/settings';
 import { getAppVersion } from '../src/utils/appVersion';
 import { checkForUpdate } from '../src/utils/updateCheck';
 import { showUpdateAvailableAlert } from '../src/utils/updateAlert';
-import { FEEDBACK_EMAIL, sendFeedback } from '../src/utils/feedback';
 
 const REPO_URL = 'https://github.com/SaamueI/app-muscu';
 
@@ -29,6 +28,7 @@ function formatCheckDate(iso: string | null): string {
 }
 
 export default function ParametresScreen() {
+  const router = useRouter();
   const [enabled, setEnabled] = useState(true);
   const [lastCheckAt, setLastCheckAt] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -43,20 +43,6 @@ export default function ParametresScreen() {
   const handleToggleEnabled = async (value: boolean) => {
     setEnabled(value);
     await setUpdatePrefs({ enabled: value });
-  };
-
-  const handleFeedback = async (kind: 'bug' | 'suggestion') => {
-    const ok = await sendFeedback(kind);
-    if (!ok) {
-      Alert.alert(
-        'Aucune application e-mail',
-        `Envoie ton retour à ${FEEDBACK_EMAIL}`,
-        [
-          { text: "Copier l'adresse", onPress: () => Clipboard.setStringAsync(FEEDBACK_EMAIL) },
-          { text: 'OK' },
-        ]
-      );
-    }
   };
 
   const handleCheckNow = async () => {
@@ -114,7 +100,7 @@ export default function ParametresScreen() {
       <View style={styles.section}>
         <Text style={styles.label}>Aide</Text>
 
-        <Pressable style={styles.row} onPress={() => handleFeedback('bug')}>
+        <Pressable style={styles.row} onPress={() => router.push('/feedback?kind=bug')}>
           <View style={styles.helpRowLeft}>
             <MaterialIcons name="bug-report" size={20} color="#555" />
             <Text style={styles.rowText}>Signaler un bug</Text>
@@ -122,7 +108,7 @@ export default function ParametresScreen() {
           <MaterialIcons name="chevron-right" size={20} color="#ccc" />
         </Pressable>
 
-        <Pressable style={[styles.row, { borderBottomWidth: 0 }]} onPress={() => handleFeedback('suggestion')}>
+        <Pressable style={[styles.row, { borderBottomWidth: 0 }]} onPress={() => router.push('/feedback?kind=suggestion')}>
           <View style={styles.helpRowLeft}>
             <MaterialIcons name="lightbulb-outline" size={20} color="#555" />
             <Text style={styles.rowText}>Envoyer une suggestion</Text>

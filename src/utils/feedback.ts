@@ -1,9 +1,13 @@
 import Constants from 'expo-constants';
-import { Linking, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 import { getAppVersion } from './appVersion';
 
-export const FEEDBACK_EMAIL = 'muscu_app.unspoiled785@passinbox.com';
+// Clé publique Web3Forms (pas un secret : elle ne fait que router vers la
+// boîte mail configurée sur web3forms.com, avec un quota côté serveur).
+const WEB3FORMS_ACCESS_KEY = '3c93845f-ebac-4745-b80a-35b55463dc04';
+const WEB3FORMS_URL = 'https://api.web3forms.com/submit';
+const TIMEOUT_MS = 8000;
 
 function todayStr(): string {
   const d = new Date();
@@ -22,33 +26,37 @@ export function buildDiagnostics(): string {
   ].join('\n');
 }
 
-function buildMailto(kind: 'bug' | 'suggestion'): string {
+// Envoie le message tapé dans l'app via Web3Forms (relais HTTPS -> e-mail,
+// sans exposer de vraies identifiants de boîte mail dans le code public).
+// Ne lève jamais : erreur réseau ou réponse non-2xx -> false.
+export async function sendFeedback(kind: 'bug' | 'suggestion', message: string): Promise<boolean> {
   const version = getAppVersion();
-  const diagnostics = `--- Diagnostic (ne pas modifier) ---\n${buildDiagnostics()}`;
-
   const subject =
     kind === 'bug'
       ? `[Carnet muscu] Bug — v${version}`
       : `[Carnet muscu] Suggestion — v${version}`;
 
-  const body =
-    kind === 'bug'
-      ? `Ce que je faisais :\n\nCe qui s'est passé :\n\nCe qui aurait dû se passer :\n\n${diagnostics}`
-      : `Ce que j'aimerais :\n\nPourquoi :\n\n${diagnostics}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  return `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
-
-// Ouvre le client mail avec un brouillon prérempli. N'utilise volontairement
-// pas Linking.canOpenURL('mailto:...') : sur Android 11+ il renvoie false
-// tant qu'une balise <queries> n'est pas déclarée dans le manifeste, même
-// quand un client mail est installé — ça bloquerait la fonctionnalité pour
-// la plupart des appareils. On tente l'ouverture directement.
-export async function sendFeedback(kind: 'bug' | 'suggestion'): Promise<boolean> {
   try {
-    await Linking.openURL(buildMailto(kind));
-    return true;
+    const res = await fetch(WEB3FORMS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        access_key: WEB3FORMS_ACCESS_KEY,
+        subject,
+        from_name: 'Carnet muscu (app)',
+        message: `${message.trim()}\n\n--- Diagnostic (ne pas modifier) ---\n${buildDiagnostics()}`,
+      }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.success === true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timeout);
   }
 }
