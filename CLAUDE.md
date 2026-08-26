@@ -117,7 +117,7 @@ Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.cr
 
 **Piège découvert avec la migration 0014 (plusieurs `ALTER TABLE` dans un même fichier) :** le migrateur Expo/Drizzle (`node_modules/drizzle-orm/expo-sqlite/migrator.js`) ne découpe un fichier `.sql` en instructions séparées que sur le marqueur littéral `--> statement-breakpoint`. Sans ce marqueur, tout le fichier est envoyé en un seul bloc à `NativeDatabase.prepareSync`, qui ne compile et n'exécute **que la toute première instruction** — les suivantes sont silencieusement ignorées, sans erreur, et la migration est quand même marquée comme appliquée. Toujours séparer chaque instruction SQL par une ligne `--> statement-breakpoint` dès qu'un fichier de migration en contient plus d'une (voir `0010_workout_session_live.sql` ou `0011_meso_calendar_anchor.sql` pour l'exemple). Un fichier à une seule instruction n'en a pas besoin.
 
-**Prochain `when` disponible** : > `1782700005000` (dernière migration : 0015).
+**Prochain `when` disponible** : > `1782700006000` (dernière migration : 0016).
 
 ### Schéma (résumé)
 
@@ -170,6 +170,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0013 | workout_session_moved_from | `workout_sessions.moved_event_from_date` (amélioration 07) |
 | 0014 | update_settings | `user_settings.update_check_enabled` (amélioration 09) |
 | 0015 | update_settings_fix | `user_settings.last_update_check_at` + `skipped_version` — suite de la 0014, qui n'ajoutait que la première colonne (piège multi-instructions, voir ci-dessus) |
+| 0016 | meso_exercise_note | `meso_exercises.note` (amélioration 06) |
 
 ---
 
@@ -296,15 +297,13 @@ Backlog issu de `docs/Notes.md` — décisions déjà actées avec l'utilisateur
 
 Aucun correctif en attente actuellement.
 
-## Améliorations en attente (6 à 10)
+## Améliorations 6 à 10 (implémentées)
 
-Cinq plans détaillés dans [docs/ameliorations/](docs/ameliorations/README.md) — décisions déjà actées avec l'utilisateur, **lire le plan en entier avant d'implémenter**. 07, 08, 09 et 10 implémentés (branche `feature/ameliorations-07-a-10`) ; reste **06**.
+Cinq plans détaillés dans [docs/ameliorations/](docs/ameliorations/README.md) — décisions déjà actées avec l'utilisateur. Les 5 sont implémentées sur la branche `feature/ameliorations-07-a-10`, dans l'ordre 07 → 08 → 09 → 10 → 06.
 
-| # | Sujet | Impact DB | Statut |
-|---|---|---|---|
-| [06](docs/ameliorations/06-infos-exercice-seance.md) | Photos / variante / alternatives / notes sur les écrans séance planifiée (éditable) et live (lecture seule) | `meso_exercises.note` + ripple export/import | à implémenter |
+**06 implémenté :** composant partagé `src/components/ExerciseImageCarousel.tsx` extrait de `exercices/[id].tsx` et de l'écran exercice de programme (rendu inchangé sur ces deux écrans). Écran séance planifiée (méso, `mesocycles/[id]/sessions/[mesoSessionId]/exercises/[mesoExerciseId].tsx`) devient éditable au même niveau que l'écran programme : carrousel (jamais éditable), alternatives (chips + picker, route `.../ajouter-alternative.tsx`), variante, note de la séance planifiée (`meso_exercises.note`, migration 0016) + note du catalogue en lecture seule. Écran séance live (`seance/exercice/[logId].tsx`) : lecture seule stricte, bloc « Infos exercice » replié par défaut sous le nom (chrono/boutons Commencer-Terminer restent atteignables sans scroller) — `getSessionLive` (`src/db/session.ts`) enrichi avec `mesoExercise`, nouveau helper `getAlternativeExercises`. Ripple export/import obligatoire (export méso documenté *lossless*) : `mesoTypes`/`mesoXlsx`/`mesoCsv`/`mesoDb` + colonne « Note exercice » (distincte de « Note séance » déjà existante), `sampleData` (template + prompt LLM), `formatDoc`. `MESO_FORMAT_VERSION` reste à 1 (colonne optionnelle, rétro-compatible).
 
-Les numéros de migration sont attribués **au moment de l'implémentation** (les docs donnent le SQL, pas le numéro). Prochain `when` disponible : > `1782700004000` (dernière migration : 0014).
+Les numéros de migration sont attribués **au moment de l'implémentation** (les docs donnent le SQL, pas le numéro). Prochain `when` disponible : > `1782700006000` (dernière migration : 0016).
 
 **07 implémenté :** `workout_sessions.moved_event_from_date` (migration 0013) mémorise la date d'origine avant qu'« Encoder aujourd'hui » (`startSessionFlow.ts`) ne déplace l'événement ; `cancelWorkoutSession` (`src/db/session.ts`) la restaure à l'annulation. Une séance terminée n'est pas concernée.
 
