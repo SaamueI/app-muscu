@@ -36,7 +36,8 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files (secrets) - .env.example reste versionné
+.env
 .env*.local
 
 # typescript

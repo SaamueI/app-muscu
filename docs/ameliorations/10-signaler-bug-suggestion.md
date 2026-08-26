@@ -101,21 +101,32 @@ Ajouter l'adresse de contact au `README.md` (petite section « Retours / support
   3. Vérifier que le bloc diagnostic contient une version, une plateforme et un appareil plausibles.
   4. Sur un appareil / émulateur **sans client mail** → le message de repli s'affiche et « Copier l'adresse » met bien l'adresse dans le presse-papier.
 
-## Révision : implémentation Web3Forms (remplace le `mailto:` ci-dessus)
+## Révision : implémentation in-app (remplace le `mailto:` ci-dessus)
 
-**Pourquoi le changement :** l'utilisateur voulait pouvoir taper son message directement dans l'app, sans dépendre d'un client mail installé/configuré sur l'appareil. Un vrai envoi automatique depuis l'app nécessite un relais réseau — impossible d'embarquer les identifiants d'une vraie boîte mail dans le code (dépôt public, identifiants récupérables et exploitables pour spammer). [Web3Forms](https://web3forms.com) sert de relais HTTPS → e-mail via une **clé d'accès publique** (pas un secret : elle ne fait que router vers la boîte configurée sur leur dashboard, avec un quota côté serveur).
+**Pourquoi le changement :** l'utilisateur voulait pouvoir taper son message directement dans l'app, sans dépendre d'un client mail installé/configuré sur l'appareil. Un vrai envoi automatique depuis l'app nécessite un relais réseau — impossible d'embarquer les identifiants d'une vraie boîte mail dans le code (dépôt public, identifiants récupérables et exploitables pour spammer).
 
-- `src/utils/feedback.ts` : `WEB3FORMS_ACCESS_KEY` (clé publique, en clair dans le code — assumé, même logique que `FEEDBACK_EMAIL` avant) + `WEB3FORMS_URL = 'https://api.web3forms.com/submit'`. `buildDiagnostics()` inchangée. `sendFeedback(kind, message)` prend maintenant le **message tapé par l'utilisateur** en paramètre, POST JSON (`access_key`, `subject`, `from_name`, `message` = texte utilisateur + bloc diagnostic), `AbortController` timeout 8 s (même pattern que `checkForUpdate`), ne lève jamais (erreur réseau/non-2xx/`success !== true` → `false`).
-- `app/feedback.tsx` — nouvel écran modal (remplace l'ouverture directe du client mail) : `TextInput` multiline pour le message, bloc diagnostic affiché en lecture seule sous le champ (transparence — l'utilisateur voit ce qui part avec son message), bouton Envoyer avec indicateur de chargement. Accessible via `?kind=bug` / `?kind=suggestion` (query param, pas un segment dynamique — `kind` n'est pas une entité DB).
-- `app/parametres.tsx` — les deux lignes de la section Aide naviguent maintenant vers `/feedback?kind=...` au lieu d'appeler `sendFeedback` directement ; le repli « aucun client mail » (`Linking.canOpenURL`, `expo-clipboard`) a disparu de cet écran.
+**Premier essai : Web3Forms — abandonné.** Testé en conditions réelles (`curl` puis device), toujours le même refus :
+```json
+{"success": false, "message": "This method is not allowed. Use our API in client side or contact support with server IP address (Pro plan is required)"}
+```
+Web3Forms (offre gratuite) exige un contexte de vraie page web chargée dans un navigateur pour accepter une soumission ; une app mobile n'en a pas, et ce n'est contournable ni en ajoutant des en-têtes `Origin`/`Referer` factices, ni depuis un vrai appareil (même erreur reproduite sur device). Fonctionnalité réservée à leur offre Pro pour ce cas d'usage — écarté.
+
+**Solution retenue : [EmailJS](https://www.emailjs.com/), mode « API non-navigateur ».** EmailJS propose explicitement ce cas d'usage : un toggle **Account → Security → « Allow EmailJS API for non-browser applications »**, plus un mode « strict » qui exige en complément une **Private Key** (`accessToken`) dans la requête — validé par test direct (`curl` vers `https://api.emailjs.com/api/v1.0/email/send`, `HTTP 200`).
+
+- `src/utils/feedback.ts` : constantes `EMAILJS_SERVICE_ID` / `EMAILJS_TEMPLATE_ID` / `EMAILJS_PUBLIC_KEY` / `EMAILJS_PRIVATE_KEY` lues depuis `process.env.EXPO_PUBLIC_EMAILJS_*` (`.env`, gitignored — voir `.env.example` versionné à la racine et la section « Variables d'environnement » de `CLAUDE.md`), avec un garde qui échoue proprement (`console.error` + `false`) si l'une manque. `buildDiagnostics()` inchangée. `sendFeedback(kind, message)` prend le **message tapé par l'utilisateur** en paramètre, POST JSON vers l'API EmailJS (`service_id`, `template_id`, `user_id` = Public Key, `accessToken` = Private Key, `template_params: { subject, content }` où `content` = texte utilisateur + bloc diagnostic), `AbortController` timeout 8 s (même pattern que `checkForUpdate`). Réponse succès = texte `"OK"` (pas de JSON) → vérifier `res.ok`, pas `res.json()`. Ne lève jamais (erreur réseau/non-2xx → `false`, avec `console.error` du détail pour le diagnostic).
+- Template EmailJS (dashboard, pas dans le code) : Subject = `{{subject}}`, Content = `<p style="font-size: 16px; white-space: pre-wrap;">{{content}}</p>` (`white-space: pre-wrap` nécessaire — le message contient de vrais retours à la ligne que le HTML ignore par défaut).
+- `app/feedback.tsx` — écran modal : `TextInput` multiline pour le message, bloc diagnostic affiché en lecture seule sous le champ (transparence — l'utilisateur voit ce qui part avec son message), bouton Envoyer avec indicateur de chargement. Accessible via `?kind=bug` / `?kind=suggestion` (query param, pas un segment dynamique — `kind` n'est pas une entité DB).
+- `app/parametres.tsx` — les deux lignes de la section Aide naviguent vers `/feedback?kind=...` au lieu d'appeler `sendFeedback` directement ; le repli « aucun client mail » (`Linking.canOpenURL`) a disparu de cet écran.
 - Échec réseau (`sendFeedback` renvoie `false`) : alerte sur `app/feedback.tsx` avec **« Copier le message »** (`expo-clipboard`) — le texte tapé n'est jamais effacé du champ, l'utilisateur peut réessayer ou le copier pour l'envoyer autrement.
 - `app/_layout.tsx` : route `feedback` enregistrée en `presentation: 'modal'`.
+
+**Point d'attention — portée de la Private Key :** contrairement à une clé publique classique (Web3Forms, Public Key EmailJS), la Private Key EmailJS est **au niveau du compte entier**, pas juste ce template. Si elle fuit depuis l'app publique, elle permettrait d'envoyer via n'importe quel service connecté à ce compte EmailJS, dans la limite du quota gratuit. Risque assumé et borné (pas de paiement, pas de donnée sensible en jeu) — à garder en tête avant de connecter une adresse plus sensible à ce même compte.
 
 ### Vérification (révisée)
 
 - `npx tsc --noEmit` → 0 erreur.
 - Sur device (Expo Go — **jamais** `expo start --web`) :
   1. Paramètres → « Signaler un bug » → l'écran de saisie s'ouvre, bloc diagnostic visible et plausible (version, plateforme, appareil).
-  2. Taper un message → Envoyer → alerte de confirmation, retour à Paramètres, e-mail bien reçu sur la boîte configurée côté Web3Forms.
+  2. Taper un message → Envoyer → alerte de confirmation, retour à Paramètres, e-mail bien reçu (Subject + Content lisibles, sauts de ligne préservés).
   3. « Envoyer une suggestion » → même chemin.
   4. Mode avion → Envoyer → message d'échec explicite, texte tapé toujours présent dans le champ, « Copier le message » fonctionne.

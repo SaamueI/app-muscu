@@ -51,10 +51,11 @@ Un APK autonome prêt à installer (pas besoin d'Expo Go ni de build) est dispon
 git clone https://github.com/SaamueI/app-muscu.git
 cd app-muscu
 npm install
+cp .env.example .env   # remplir avec tes identifiants EmailJS si besoin (voir .env.example)
 npx expo start --clear
 ```
 
-Scanner le QR code avec l'app **Expo Go** (Android/iOS) pour lancer l'app sur un appareil, ou lancer un émulateur (`npm run android` / `npm run ios`).
+Scanner le QR code avec l'app **Expo Go** (Android/iOS) pour lancer l'app sur un appareil, ou lancer un émulateur (`npm run android` / `npm run ios`). Sans `.env` rempli, l'app fonctionne normalement — seul l'envoi de feedback (Paramètres → Aide) échouera silencieusement.
 
 ## 🗄️ Base de données
 
