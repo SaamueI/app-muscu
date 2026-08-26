@@ -1,3 +1,5 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +17,7 @@ import { getUpdatePrefs, setUpdatePrefs } from '../src/db/settings';
 import { getAppVersion } from '../src/utils/appVersion';
 import { checkForUpdate } from '../src/utils/updateCheck';
 import { showUpdateAvailableAlert } from '../src/utils/updateAlert';
+import { FEEDBACK_EMAIL, sendFeedback } from '../src/utils/feedback';
 
 const REPO_URL = 'https://github.com/SaamueI/app-muscu';
 
@@ -40,6 +43,20 @@ export default function ParametresScreen() {
   const handleToggleEnabled = async (value: boolean) => {
     setEnabled(value);
     await setUpdatePrefs({ enabled: value });
+  };
+
+  const handleFeedback = async (kind: 'bug' | 'suggestion') => {
+    const ok = await sendFeedback(kind);
+    if (!ok) {
+      Alert.alert(
+        'Aucune application e-mail',
+        `Envoie ton retour à ${FEEDBACK_EMAIL}`,
+        [
+          { text: "Copier l'adresse", onPress: () => Clipboard.setStringAsync(FEEDBACK_EMAIL) },
+          { text: 'OK' },
+        ]
+      );
+    }
   };
 
   const handleCheckNow = async () => {
@@ -93,6 +110,27 @@ export default function ParametresScreen() {
         </Pressable>
       </View>
 
+      {/* Aide */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Aide</Text>
+
+        <Pressable style={styles.row} onPress={() => handleFeedback('bug')}>
+          <View style={styles.helpRowLeft}>
+            <MaterialIcons name="bug-report" size={20} color="#555" />
+            <Text style={styles.rowText}>Signaler un bug</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={20} color="#ccc" />
+        </Pressable>
+
+        <Pressable style={[styles.row, { borderBottomWidth: 0 }]} onPress={() => handleFeedback('suggestion')}>
+          <View style={styles.helpRowLeft}>
+            <MaterialIcons name="lightbulb-outline" size={20} color="#555" />
+            <Text style={styles.rowText}>Envoyer une suggestion</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={20} color="#ccc" />
+        </Pressable>
+      </View>
+
       {/* À propos */}
       <View style={styles.section}>
         <Text style={styles.label}>À propos</Text>
@@ -128,6 +166,7 @@ const styles = StyleSheet.create({
   },
   rowText: { fontSize: 15, color: '#333' },
   rowValue: { fontSize: 15, color: '#888' },
+  helpRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
   checkBtn: {
     backgroundColor: '#007AFF', marginTop: 14,

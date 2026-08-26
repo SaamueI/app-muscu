@@ -75,6 +75,10 @@ Projet actif, développé de manière itérative par phases documentées dans [`
 | Onglet Progression (graphiques, records) | 🚧 |
 | Chronomètre en arrière-plan (notification) | 🚧 |
 
+## 💬 Retours / support
+
+Un bug ou une idée d'amélioration ? Écris à **muscu_app.unspoiled785@passinbox.com** (ou depuis l'app : Paramètres → Aide). C'est aussi accessible directement dans l'app, avec un diagnostic (version, plateforme, appareil) préempli automatiquement.
+
 ## Auteur
 
 Développé par [Samuel Gilot](https://github.com/SaamueI).
