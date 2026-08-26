@@ -4,6 +4,15 @@ Application mobile React Native / Expo de suivi d'entraînement.
 
 ---
 
+## Pédagogie
+
+L'utilisateur n'est pas du tout familier avec le developpement mobile, ni avec react. 
+Le but est de créer une app qui fonctionne mais aussi d'instruire l'utilisateur.
+Pour cela, explique toujours ce que tu fais.
+Si des cas d'école sont recontrés, explique les en détail.
+
+---
+
 ## Stack
 
 | Outil | Version |
@@ -279,6 +288,20 @@ La phase 13 change le workflow de build (sortie d'Expo Go) ; la phase 7 est ind�
 Backlog issu de `docs/Notes.md` — décisions déjà actées avec l'utilisateur, plans détaillés dans `docs/fix-NN-*.md`. **Lire le plan en entier avant d'implémenter un fix.**
 
 Aucun correctif en attente actuellement.
+
+## Améliorations en attente (6 à 10)
+
+Cinq plans détaillés dans [docs/ameliorations/](docs/ameliorations/README.md) — décisions déjà actées avec l'utilisateur, **lire le plan en entier avant d'implémenter**. Ordre recommandé : 07 → 08 → 09 → 10 → 06.
+
+| # | Sujet | Impact DB |
+|---|---|---|
+| [06](docs/ameliorations/06-infos-exercice-seance.md) | Photos / variante / alternatives / notes sur les écrans séance planifiée (éditable) et live (lecture seule) | `meso_exercises.note` + ripple export/import |
+| [07](docs/ameliorations/07-annulation-date-seance.md) | Annuler une séance déplacée par « Encoder aujourd'hui » restaure sa date planifiée | `workout_sessions.moved_event_from_date` |
+| [08](docs/ameliorations/08-date-modifiable-evenement.md) | Date + mode « à la semaine » modifiables depuis l'écran de modification d'un événement | — |
+| [09](docs/ameliorations/09-verification-mise-a-jour.md) | Vérification de mise à jour (releases GitHub) + **nouvel écran `app/parametres.tsx`** | 3 colonnes sur `user_settings` |
+| [10](docs/ameliorations/10-signaler-bug-suggestion.md) | Signaler un bug / envoyer une suggestion par `mailto:` | — |
+
+Les numéros de migration sont attribués **au moment de l'implémentation** (les docs donnent le SQL, pas le numéro).
 
 Fixes 01 (menu calendrier « Voir la séance planifiée »), 02 (annuler une séance commencée), 03 (header exercice live tappable), 04 (cohérence calendrier × date d'encodage), 05 (sections « Performances » vides) et 06 (suppression d'un exercice utilisé) implémentés. Fix 01 : `src/utils/plannedSessionRoute.ts` (`getPlannedSessionRoute`) résout `refType`/`refId` → route méso ou programme (fallback `program_session` si `refType` absent, cf. `startWorkoutSession`) ; entrée de menu dans `app/calendrier/[date].tsx` et `app/(tabs)/calendrier.tsx`. Fix 02/04 : migration 0012, `cancelWorkoutSession`/`startWorkoutSession` dans `src/db/session.ts`, `src/utils/startSessionFlow.ts` ; annulation sans confirmation supplémentaire si 0 série enregistrée (`confirmCancel` dans `app/seance/[sessionId].tsx`). Fix 03 : `app/seance/exercice/[logId].tsx` affiche le nom de l'exercice dans une `View` juste avant la section « Objectifs » (pas de header dynamique, pas de navigation). Fix 05 : `app/exercices/[id].tsx` et l'écran exercice de programme (`app/programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId].tsx`) utilisent `getPreviousPerfs`/`getUserWeightUnit` (`src/db/session.ts`) au lieu d'un placeholder statique / d'une requête filtrée sur `programExerciseId`. Fix 06 : `getExerciseUsage`/`deleteExerciseCascade` ajoutés à `src/db/exerciseMerge.ts` (aux côtés de `remapExercise`, phase 12) ; `app/exercices/[id].tsx` — `handleDelete` détecte les usages et propose Annuler / « Remplacer par… » (Modal + `ExercisePicker`, exclusion manuelle de l'exercice courant) / « Tout supprimer… » (double confirmation Android-safe, ≤3 boutons par alerte).
 
