@@ -429,6 +429,18 @@ export default function ExerciceDetailLiveScreen() {
               {enriched.exercise.equipment && <Text style={styles.tag}>{enriched.exercise.equipment}</Text>}
             </View>
 
+            {enriched.exercise.description ? (
+              <>
+                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Instructions</Text>
+                {enriched.exercise.description.split('\n\n').map((step, i) => (
+                  <View key={i} style={styles.step}>
+                    <Text style={styles.stepNumber}>{i + 1}</Text>
+                    <Text style={styles.stepText}>{step}</Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+
             {(enriched.mesoExercise || enriched.programExercise) && (
               <>
                 <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Variante</Text>
@@ -736,6 +748,13 @@ const styles = StyleSheet.create({
   infoToggleText: { fontSize: 14, color: '#007AFF', fontWeight: '500' },
   infoSubTitle: { marginTop: 12 },
   infoText: { fontSize: 15, color: '#1C1C1E' },
+  step: { flexDirection: 'row', marginTop: 8, gap: 10, alignItems: 'flex-start' },
+  stepNumber: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: '#007AFF',
+    color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: '700',
+    lineHeight: 22, overflow: 'hidden',
+  },
+  stepText: { flex: 1, fontSize: 14, color: '#333', lineHeight: 20 },
   catalogNoteText: { color: '#8E8E93' },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tag: {

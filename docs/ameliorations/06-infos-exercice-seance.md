@@ -91,7 +91,7 @@ Fichier : `app/seance/exercice/[logId].tsx`.
 
 Source des infos, par ordre de priorité : `enriched.mesoExercise` → `enriched.programExercise` (les deux tables portent `selectedVariation` et `alternativeExerciseIds`) → aucune (exercice libre ajouté en cours de séance via `addFreeExerciseLog`).
 
-**Placement — bloc replié par défaut.** Insérer, juste sous le nom de l'exercice, une ligne tappable « Infos exercice ▾ » qui déplie une section contenant : carrousel, tags, variante, alternatives (chips tappables vers `/exercices/[id]`), note du planning, note du catalogue.
+**Placement — bloc replié par défaut.** Insérer, juste sous le nom de l'exercice, une ligne tappable « Infos exercice ▾ » qui déplie une section contenant : carrousel, tags, **instructions** (`exercise.description`, ajouté après coup à la demande de l'utilisateur — mêmes pas numérotés que `exercices/[id].tsx`), variante, alternatives (chips tappables vers `/exercices/[id]`), note du planning, note du catalogue.
 
 Motif : le chrono et les boutons « Commencer / Terminer série » doivent rester atteignables sans scroller pendant la séance. Un carrousel de 220 px et trois sections poussés au-dessus seraient une régression d'usage réelle. Le reste de l'écran (Objectifs, Timer, Séries de cette séance, Historique) est **inchangé**.
 
