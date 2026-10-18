@@ -162,6 +162,8 @@ export const setLogs = sqliteTable('set_logs', {
   executionSeconds: integer('execution_seconds'),
   setNumber: integer('set_number'),
   side: text('side'),
+  // Note libre saisie dans le modal de performance (une par ligne, donc une par côté en unilatéral)
+  note: text('note'),
 });
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────

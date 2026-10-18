@@ -15,6 +15,7 @@ import {
 import { ExerciseImageCarousel } from '../../../src/components/ExerciseImageCarousel';
 import GlobalRestBanner from '../../../src/components/GlobalRestBanner';
 import RestPresetPicker from '../../../src/components/RestPresetPicker';
+import SetNote from '../../../src/components/SetNote';
 import SetPerformanceModal from '../../../src/components/SetPerformanceModal';
 import TimerDisplay from '../../../src/components/TimerDisplay';
 import { db } from '../../../src/db';
@@ -96,7 +97,25 @@ export default function ExerciceDetailLiveScreen() {
     const exUnit = logRow.exercise.weightUnit as 'kg' | 'lb' | null;
     setWeightUnit(exUnit ?? userUnit);
 
-    setLocalNextSetNumber((found?.setLogs.length ?? 0) + 1);
+    // Compteurs locaux déduits des séries enregistrées. En unilatéral il y a 2 lignes
+    // par série (G puis D) : « longueur + 1 » donnerait un mauvais numéro, on part donc
+    // du plus grand setNumber, et d'un éventuel côté D encore manquant.
+    const logged = found?.setLogs ?? [];
+    const maxN = logged.reduce((m, l) => Math.max(m, l.setNumber ?? 0), 0);
+    if (logged.some((l) => l.side)) {
+      const hasL = logged.some((l) => l.setNumber === maxN && l.side === 'L');
+      const hasR = logged.some((l) => l.setNumber === maxN && l.side === 'R');
+      setLocalIsUnilateral(true);
+      if (hasL && !hasR) {
+        setLocalNextSetNumber(maxN);
+        setLocalCurrentSide('R');
+      } else {
+        setLocalNextSetNumber(maxN + 1);
+        setLocalCurrentSide('L');
+      }
+    } else {
+      setLocalNextSetNumber(maxN + 1);
+    }
   }, [logId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -307,14 +326,66 @@ export default function ExerciceDetailLiveScreen() {
     load();
   };
 
+  // Encodage « à la main » : ouvre le modal pour la série/le côté courant sans toucher au
+  // chrono. Sert quand le modal a été fermé sans enregistrer (retour Android, tap sur le
+  // fond) ou quand on encode sans avoir chronométré.
+  const handleManualEntry = () => {
+    setEditingSetLog(null);
+    setModalVisible(true);
+  };
+
+  // Enregistrement d'une série encodée à la main, hors repos en cours : pas de chrono
+  // (executionSeconds reste null), et on avance le compteur série/côté.
+  const handleSaveManual = async (data: SetLogData) => {
+    if (!logId) return;
+    const s = getActiveSession();
+    const active = s.activeExerciseLogId === logId;
+    const unilateral = active ? s.isUnilateral : localIsUnilateral;
+    const side = unilateral ? (active ? (s.currentSide ?? 'L') : (localCurrentSide ?? 'L')) : null;
+    const setNumber = active ? s.currentSetNumber : localNextSetNumber;
+
+    await saveSetLog(logId, { ...data, executionSeconds: null }, setNumber, side ?? undefined);
+    setModalVisible(false);
+
+    const nextSide = unilateral ? (side === 'L' ? 'R' : 'L') : null;
+    const nextSet = unilateral && side === 'L' ? setNumber : setNumber + 1;
+    if (active) {
+      setActiveSession({ currentSetNumber: nextSet, currentSide: nextSide });
+    } else {
+      setLocalNextSetNumber(nextSet);
+      setLocalCurrentSide(nextSide);
+    }
+    load();
+  };
+
   const handleEditSetLog = (sl: SetLogRow) => {
     setEditingSetLog(sl);
     setModalVisible(true);
   };
 
+  // Menu « Modifier » d'une série : en unilatéral (G et D enregistrés), on choisit le côté.
+  const handleEditRow = (left: SetLogRow, right: SetLogRow | undefined) => {
+    if (!right) {
+      handleEditSetLog(left);
+      return;
+    }
+    Alert.alert(`Modifier la série #${left.setNumber ?? '?'}`, undefined, [
+      { text: 'Gauche', onPress: () => handleEditSetLog(left) },
+      { text: 'Droite', onPress: () => handleEditSetLog(right) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
   const handleSaveEdit = async (data: SetLogData) => {
     if (!editingSetLog) return;
-    await updateSetLog(editingSetLog.id, data);
+    // Le modal ne connaît pas les temps chronométrés : sans ça, modifier une série
+    // écraserait sa durée d'exécution par null.
+    await updateSetLog(editingSetLog.id, {
+      ...data,
+      executionSeconds: editingSetLog.executionSeconds,
+      durationSeconds: editingSetLog.durationSeconds,
+      restSeconds: editingSetLog.restSeconds,
+    });
     setModalVisible(false);
     setEditingSetLog(null);
     load();
@@ -391,14 +462,18 @@ export default function ExerciceDetailLiveScreen() {
     mesoSet?.targetRirMin ?? mesoSet?.targetRirMax ??
     enriched.programExercise?.targetRirMin ?? enriched.programExercise?.targetRirMax ?? null;
 
-  const modalKey = isEditing ? `edit-${editingSetLog!.id}` : `new-${s.currentSetNumber}-${s.currentSide ?? ''}`;
+  const modalKey = isEditing ? `edit-${editingSetLog!.id}` : `new-${effSetNumber}-${effCurrentSide ?? ''}`;
   const modalPrefillWeightKg = isEditing ? editingSetLog!.weight : prefillWeightKg;
   const modalPrefillReps = isEditing ? editingSetLog!.reps : prefillReps;
   const modalPrefillRir = isEditing ? editingSetLog!.rir : prefillRir;
   const modalPrefillPartialReps = isEditing ? editingSetLog!.partialReps : (histSet?.partialReps ?? null);
   const modalPrefillPdc = isEditing ? (editingSetLog!.pdc ?? false) : (histSet?.pdc ?? false);
-  const modalSetNumber = isEditing ? (editingSetLog!.setNumber ?? s.currentSetNumber) : s.currentSetNumber;
-  const modalSide = isEditing ? (editingSetLog!.side as 'L' | 'R' | null) : s.currentSide;
+  const modalPrefillNote = isEditing ? editingSetLog!.note : null;
+  const modalSetNumber = isEditing ? (editingSetLog!.setNumber ?? effSetNumber) : effSetNumber;
+  const modalSide = isEditing ? (editingSetLog!.side as 'L' | 'R' | null) : effCurrentSide;
+  // Nouvelle série : pendant un repos de cet exercice (modal fermé par « retour »), on réutilise
+  // le flux normal, qui laisse le repos courir ; sinon c'est un encodage manuel.
+  const handleSaveNew = isActive && phase === 'rest' ? handleSavePerf : handleSaveManual;
 
   const sideLabel = (side: 'L' | 'R' | null) =>
     side === 'L' ? ' (Gauche)' : side === 'R' ? ' (Droite)' : '';
@@ -596,6 +671,13 @@ export default function ExerciceDetailLiveScreen() {
                 </Text>
               </Pressable>
             )}
+            {(phase === 'idle' || phase === 'rest') && (
+              <Pressable style={[styles.primaryBtn, styles.manualBtn]} onPress={handleManualEntry}>
+                <Text style={styles.manualBtnText}>
+                  + Encoder la série {effSetNumber}{sideLabel(effCurrentSide)}
+                </Text>
+              </Pressable>
+            )}
             {phase === 'execution' && (
               <Pressable style={[styles.primaryBtn, styles.stopBtn]} onPress={handleTerminer}>
                 <Text style={styles.primaryBtnText}>Terminer série</Text>
@@ -644,7 +726,7 @@ export default function ExerciceDetailLiveScreen() {
                       `Série #${setNum}`,
                       undefined,
                       [
-                        { text: 'Modifier', onPress: () => handleEditSetLog(sl) },
+                        { text: 'Modifier', onPress: () => handleEditRow(sl, partner) },
                         { text: 'Supprimer', style: 'destructive', onPress: () => handleDeleteSetLog(sl) },
                         { text: 'Annuler', style: 'cancel' },
                       ]
@@ -656,10 +738,14 @@ export default function ExerciceDetailLiveScreen() {
                     <Text style={styles.setLine}>
                       {sl.side ? 'G : ' : ''}{formatSetLine(sl, weightUnit)}
                     </Text>
+                    <SetNote note={sl.note} />
                     {partner && (
-                      <Text style={[styles.setLine, styles.setLineSub]}>
-                        D : {formatSetLine(partner, weightUnit)}
-                      </Text>
+                      <>
+                        <Text style={[styles.setLine, styles.setLineSub]}>
+                          D : {formatSetLine(partner, weightUnit)}
+                        </Text>
+                        <SetNote note={partner.note} />
+                      </>
                     )}
                   </View>
                   <Text style={styles.editHint}>⋮</Text>
@@ -690,10 +776,14 @@ export default function ExerciceDetailLiveScreen() {
                           <Text style={styles.setLine}>
                             {sl.side ? 'G : ' : ''}{formatSetLine(sl, weightUnit)}
                           </Text>
+                          <SetNote note={sl.note} />
                           {partner && (
-                            <Text style={[styles.setLine, styles.setLineSub]}>
-                              D : {formatSetLine(partner, weightUnit)}
-                            </Text>
+                            <>
+                              <Text style={[styles.setLine, styles.setLineSub]}>
+                                D : {formatSetLine(partner, weightUnit)}
+                              </Text>
+                              <SetNote note={partner.note} />
+                            </>
                           )}
                         </View>
                       </View>
@@ -709,7 +799,7 @@ export default function ExerciceDetailLiveScreen() {
         key={modalKey}
         visible={modalVisible}
         onClose={() => { setModalVisible(false); setEditingSetLog(null); }}
-        onSave={isEditing ? handleSaveEdit : handleSavePerf}
+        onSave={isEditing ? handleSaveEdit : handleSaveNew}
         weightUnit={weightUnit}
         exerciseId={enriched.exercise.id}
         setNumber={modalSetNumber}
@@ -719,6 +809,7 @@ export default function ExerciceDetailLiveScreen() {
         prefillRir={modalPrefillRir}
         prefillPartialReps={modalPrefillPartialReps}
         prefillPdc={modalPrefillPdc}
+        prefillNote={modalPrefillNote}
       />
     </SafeAreaView>
   );
@@ -821,6 +912,8 @@ const styles = StyleSheet.create({
   stopBtn: { backgroundColor: '#FF3B30' },
   startEarlyBtn: { backgroundColor: '#34C759' },
   doneBtn: { backgroundColor: '#8E8E93' },
+  manualBtn: { backgroundColor: '#F0F7FF', borderWidth: 1, borderColor: '#C8E0FF' },
+  manualBtnText: { color: '#007AFF', fontSize: 16, fontWeight: '600' },
   primaryBtnText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
   infoIcon: { fontSize: 18, color: '#8E8E93', marginLeft: 2 },
   setRow: {

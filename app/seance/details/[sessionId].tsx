@@ -11,6 +11,7 @@ import {
   type SessionLiveData,
 } from '../../../src/db/session';
 import { STATUS_COLORS, STATUS_LABELS } from '../../../src/utils/eventStatus';
+import SetNote from '../../../src/components/SetNote';
 import { formatSetLine } from '../../../src/utils/formatSetLine';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
@@ -115,10 +116,14 @@ export default function SessionDetailsScreen() {
                       <Text style={styles.setLine}>
                         {sl.side ? 'G : ' : ''}{formatSetLine(sl, unit)}
                       </Text>
+                      <SetNote note={sl.note} />
                       {partner && (
-                        <Text style={[styles.setLine, styles.setLineSub]}>
-                          D : {formatSetLine(partner, unit)}
-                        </Text>
+                        <>
+                          <Text style={[styles.setLine, styles.setLineSub]}>
+                            D : {formatSetLine(partner, unit)}
+                          </Text>
+                          <SetNote note={partner.note} />
+                        </>
                       )}
                     </View>
                   </View>

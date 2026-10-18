@@ -2,6 +2,7 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import SetNote from '../../../../src/components/SetNote';
 import SetPerformanceModal from '../../../../src/components/SetPerformanceModal';
 import { setLogs } from '../../../../src/db/schema';
 import {
@@ -86,9 +87,17 @@ export default function SessionEditScreen() {
 
   const handleSaveEdit = async (data: SetLogData) => {
     if (!editContext) return;
-    await updateSetLog(editContext.primary.id, data);
+    // Le modal ne connaît pas les temps chronométrés : on réinjecte ceux de chaque ligne,
+    // sinon la modification les écraserait par null.
+    const keepTimes = (row: SetLogRow): SetLogData => ({
+      ...data,
+      executionSeconds: row.executionSeconds,
+      durationSeconds: row.durationSeconds,
+      restSeconds: row.restSeconds,
+    });
+    await updateSetLog(editContext.primary.id, keepTimes(editContext.primary));
     if (editContext.mode === 'both' && editContext.partner) {
-      await updateSetLog(editContext.partner.id, data);
+      await updateSetLog(editContext.partner.id, keepTimes(editContext.partner));
     }
     closeModal();
     load();
@@ -290,9 +299,12 @@ export default function SessionEditScreen() {
                           </Pressable>
                         </View>
                         <Text style={styles.setNum}>#{setNum}</Text>
-                        <Text style={styles.setLine}>
-                          {sl.side ? 'G : ' : ''}{formatSetLine(sl, unit)}
-                        </Text>
+                        <View style={styles.setBody}>
+                          <Text style={styles.setLineText}>
+                            {sl.side ? 'G : ' : ''}{formatSetLine(sl, unit)}
+                          </Text>
+                          <SetNote note={sl.note} />
+                        </View>
                         <Text style={styles.editHint}>⋮</Text>
                       </Pressable>
                       {partner && (
@@ -302,9 +314,12 @@ export default function SessionEditScreen() {
                         >
                           <View style={styles.arrowCol} />
                           <Text style={styles.setNum} />
-                          <Text style={[styles.setLine, styles.setLineSub]}>
-                            D : {formatSetLine(partner, unit)}
-                          </Text>
+                          <View style={styles.setBody}>
+                            <Text style={[styles.setLineText, styles.setLineSub]}>
+                              D : {formatSetLine(partner, unit)}
+                            </Text>
+                            <SetNote note={partner.note} />
+                          </View>
                           <Text style={styles.editHint}>⋮</Text>
                         </Pressable>
                       )}
@@ -334,6 +349,7 @@ export default function SessionEditScreen() {
         prefillRir={editContext?.primary.rir ?? addPrefill?.rir ?? null}
         prefillPartialReps={editContext?.primary.partialReps ?? addPrefill?.partialReps ?? null}
         prefillPdc={editContext ? (editContext.primary.pdc ?? false) : (addPrefill?.pdc ?? false)}
+        prefillNote={editContext?.primary.note ?? null}
       />
     </View>
   );
@@ -373,7 +389,8 @@ const styles = StyleSheet.create({
   arrowBtnDisabled: { opacity: 0.2 },
   arrowText: { fontSize: 11, color: '#555' },
   setNum: { fontSize: 14, fontWeight: '600', color: '#8E8E93', minWidth: 28 },
-  setLine: { fontSize: 15, color: '#1C1C1E', flex: 1 },
+  setBody: { flex: 1 },
+  setLineText: { fontSize: 15, color: '#1C1C1E' },
   setLineSub: { fontSize: 13, color: '#8E8E93' },
   editHint: { fontSize: 16, color: '#C7C7CC', paddingHorizontal: 4 },
 
