@@ -4,7 +4,7 @@ import { Animated, Dimensions, PanResponder, Pressable, StyleSheet, Text } from 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TimerDisplay from './TimerDisplay';
-import { setActiveSession } from '../utils/activeSessionStore';
+import { promptExitSession } from '../utils/sessionExitFlow';
 import { useActiveSessionTick } from '../utils/useSessionTimer';
 
 const DRAG_THRESHOLD = 3;
@@ -43,7 +43,7 @@ export default function ActiveSessionBanner() {
     })
   ).current;
 
-  if (!s.sessionId || s.bannerDismissed) return null;
+  if (!s.sessionId) return null;
   if (pathname.startsWith('/seance/')) return null;
 
   const elapsed = Math.floor((Date.now() - s.timerStartedAt) / 1000);
@@ -57,7 +57,15 @@ export default function ActiveSessionBanner() {
       {...panResponder.panHandlers}
     >
       <Pressable style={styles.content} onPress={() => router.push(`/seance/${s.sessionId}` as any)}>
-        <Text style={styles.title}>Séance en cours</Text>
+        <Text style={styles.title}>Séance</Text>
+        {s.sessionStartedAt != null && (
+          <TimerDisplay
+            startedAt={s.sessionStartedAt}
+            targetSeconds={null}
+            isRunning
+            style={styles.globalTime}
+          />
+        )}
         {s.timerPhase !== 'idle' && (
           <TimerDisplay
             startedAt={s.timerStartedAt}
@@ -67,7 +75,7 @@ export default function ActiveSessionBanner() {
           />
         )}
       </Pressable>
-      <Pressable hitSlop={8} onPress={() => setActiveSession({ bannerDismissed: true })}>
+      <Pressable hitSlop={8} onPress={() => promptExitSession(s.sessionId!)}>
         <Text style={styles.close}>✕</Text>
       </Pressable>
     </Animated.View>
@@ -104,6 +112,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  globalTime: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'right',
   },
   time: {
     fontSize: 17,

@@ -67,13 +67,15 @@ src/
     DatePickerField.tsx     # Bouton → picker natif OS (date) ; props: value: Date|null, onChange
     WeekPickerField.tsx     # Calendrier inline react-native-calendars, sélection à la semaine ; props: value: string (ISO "YYYY-Www"), onChange
     GlobalRestBanner.tsx    # Bandeau repos en cours (phase 11) ; prop excludeLogId
-    ActiveSessionBanner.tsx # Bandeau reprise séance globale (phase 11), déplaçable
+    ActiveSessionBanner.tsx # Bandeau reprise séance globale (phase 11), déplaçable ; croix = alerte Annuler/Terminer/Retour
+    SessionClock.tsx        # Chrono global de séance pour les headers natifs (amélioration 11)
     ImportScreen.tsx        # Écran d'import générique réutilisé par méso/programme (phase 12)
   utils/
     generateId.ts
     altPickerStore.ts      # Store module-level pour passer un exo entre écrans
     mesoDeletePref.ts      # Flag "ne plus demander" suppression de séance
-    activeSessionStore.ts  # Store éphémère timer en cours de séance
+    activeSessionStore.ts  # Store éphémère timer en cours de séance (+ sessionStartedAt)
+    sessionExitFlow.ts     # promptCancelSession / finishSessionNow / promptExitSession (écran séance + widget)
     useSessionTimer.ts     # Hook useActiveSessionTick (tick 1s pour les bandeaux, phase 11)
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
     eventStatus.ts         # Labels/couleurs statut event + getEffectiveStatus (déduit "en cours")

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 
 import { db } from './index';
 import {
@@ -16,7 +16,7 @@ import {
   workoutSessions,
 } from './schema';
 import { generateId } from '../utils/generateId';
-import { getActiveSession, resetActiveSession } from '../utils/activeSessionStore';
+import { getActiveSession, notifySessionEnded, resetActiveSession, setActiveSession } from '../utils/activeSessionStore';
 
 // ─── Types exportés ───────────────────────────────────────────────────────────
 
@@ -353,6 +353,34 @@ export async function finishSession(sessionId: string): Promise<void> {
   if (getActiveSession().sessionId === sessionId) {
     resetActiveSession();
   }
+  notifySessionEnded();
+}
+
+// ─── Ré-hydrater le store après un kill de l'app ─────────────────────────────
+// Le store est en mémoire : si Android tue l'app, il est vide alors que la
+// séance reste ouverte en DB (finished_at IS NULL). Au lancement, on retrouve
+// la séance non terminée la plus récente, commencée il y a moins de 12 h
+// (au-delà on suppose une séance oubliée, pas une séance en cours).
+
+const OPEN_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+export async function restoreOpenSession(): Promise<void> {
+  if (getActiveSession().sessionId) return;
+  const since = new Date(Date.now() - OPEN_SESSION_MAX_AGE_MS).toISOString();
+  const [open] = await db
+    .select()
+    .from(workoutSessions)
+    .where(
+      and(
+        isNull(workoutSessions.finishedAt),
+        isNotNull(workoutSessions.startedAt),
+        gte(workoutSessions.startedAt, since)
+      )
+    )
+    .orderBy(desc(workoutSessions.startedAt))
+    .limit(1);
+  if (!open?.startedAt) return;
+  setActiveSession({ sessionId: open.id, sessionStartedAt: Date.parse(open.startedAt) });
 }
 
 // ─── Annuler une séance commencée ─────────────────────────────────────────────
@@ -384,6 +412,7 @@ export async function cancelWorkoutSession(sessionId: string): Promise<void> {
   if (getActiveSession().sessionId === sessionId) {
     resetActiveSession();
   }
+  notifySessionEnded();
 }
 
 // ─── Données live de la séance ────────────────────────────────────────────────
