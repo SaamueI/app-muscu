@@ -10,6 +10,7 @@ import { calendarEvents, mesocycles, mesoSessions, programs, workoutSessions } f
 import { getExistingSession } from '../../src/db/session';
 import { exportMesocycle } from '../../src/export/actions';
 import { getEffectiveStatus, STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
+import { useReloadOnSessionEnded } from '../../src/utils/useSessionTimer';
 
 type Mesocycle = typeof mesocycles.$inferSelect;
 type MesoSession = typeof mesoSessions.$inferSelect;
@@ -94,6 +95,7 @@ export default function MesocycleDetailScreen() {
   }, [id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useReloadOnSessionEnded(load);
 
   const handleSessionPress = async (s: MesoSession) => {
     const ev = eventsByMesoSession[s.id];

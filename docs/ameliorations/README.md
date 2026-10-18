@@ -16,7 +16,7 @@ Plans d'implémentation issus de `Default/Améliorations app muscu.md` (backlog 
 | 8 | Changer la date d'une séance depuis l'écran de modification | [08](08-date-modifiable-evenement.md) | ✅ implémenté |
 | 9 | Vérification de mise à jour (releases GitHub) | [09](09-verification-mise-a-jour.md) | ✅ implémenté |
 | 10 | Signaler un bug / envoyer une suggestion | [10](10-signaler-bug-suggestion.md) | ✅ implémenté |
-| 11 | Séance live : chrono global + sortie (flèche = interrompre, croix du widget = Annuler/Terminer/Retour) | [11](11-seance-live-chrono-et-sortie.md) | ✅ acté, à implémenter |
+| 11 | Séance live : chrono global + sortie (flèche = interrompre, croix du widget = Annuler/Terminer/Retour) | [11](11-seance-live-chrono-et-sortie.md) | ✅ implémenté (typecheck OK, non testé sur device) |
 | 12 | Exercice live : saisie des séries (RIR 0, clavier auto, back pendant l'encodage, modifier un seul côté, note par série) | [12](12-exercice-live-saisie-series.md) | ✅ implémenté et testé sur device |
 | 13 | Exercice live : avancement dans les objectifs, pré-toggle unilatéral, repos ÷ 2, repos prédéfini modifiable, côté de départ réglable | [13](13-exercice-live-progression-unilateral-repos.md) | ✅ acté, à implémenter |
 | 14 | Exercice live : basculer sur un exercice alternatif, changer la variante de l'exercice en cours | [14](14-exercice-live-alternative.md) | ✅ acté, à implémenter |

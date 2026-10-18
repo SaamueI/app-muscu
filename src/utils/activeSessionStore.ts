@@ -2,6 +2,7 @@ export type TimerPhase = 'idle' | 'execution' | 'rest';
 
 type ActiveSession = {
   sessionId: string | null;
+  sessionStartedAt: number | null;
   timerPhase: TimerPhase;
   timerStartedAt: number;
   timerTargetSeconds: number | null;
@@ -13,11 +14,11 @@ type ActiveSession = {
   lastRestPresets: Record<string, number>;
   lastExecutionSeconds: number | null;
   restForExerciseName: string | null;
-  bannerDismissed: boolean;
 };
 
 const DEFAULT: ActiveSession = {
   sessionId: null,
+  sessionStartedAt: null,
   timerPhase: 'idle',
   timerStartedAt: 0,
   timerTargetSeconds: null,
@@ -29,7 +30,6 @@ const DEFAULT: ActiveSession = {
   lastRestPresets: {},
   lastExecutionSeconds: null,
   restForExerciseName: null,
-  bannerDismissed: false,
 };
 
 let state: ActiveSession = { ...DEFAULT };
@@ -44,4 +44,20 @@ export function setActiveSession(updates: Partial<ActiveSession>): void {
 
 export function resetActiveSession(): void {
   state = { ...DEFAULT };
+}
+
+// ─── Fin de séance ────────────────────────────────────────────────────────────
+// finishSession / cancelWorkoutSession préviennent les écrans abonnés : un écran
+// déjà affiché (calendrier, séance planifiée…) ne reçoit pas de nouveau « focus »
+// quand la séance est terminée/annulée depuis le widget, il doit donc se recharger.
+
+const endedListeners = new Set<() => void>();
+
+export function subscribeSessionEnded(listener: () => void): () => void {
+  endedListeners.add(listener);
+  return () => { endedListeners.delete(listener); };
+}
+
+export function notifySessionEnded(): void {
+  endedListeners.forEach((l) => l());
 }

@@ -1,6 +1,7 @@
 # 11 — Séance live : chrono global + sortie de séance
 
-> **Statut : ✅ décisions actées (2026-10-08)** — prêt à implémenter. Toutes les recommandations ci-dessous ont été validées.
+> **Statut : ✅ implémenté (2026-10-18)** — `tsc` à 0 erreur, **non testé sur device** (vérification ci-dessous à faire). Écart au plan : le chrono de l'écran exercice est posé via `headerRight` dans `app/_layout.tsx` (composant `SessionClock`) plutôt que `navigation.setOptions`. Ré-hydratation (question 4) : `restoreOpenSession` dans `src/db/session.ts`, appelée au lancement.
+> Décisions actées (2026-10-08) : Toutes les recommandations ci-dessous ont été validées.
 
 Deux demandes regroupées parce qu'elles touchent les mêmes fichiers (`app/seance/[sessionId].tsx`, `src/components/ActiveSessionBanner.tsx`, `src/utils/activeSessionStore.ts`).
 

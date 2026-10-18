@@ -18,6 +18,7 @@ import { deleteCalendarEventCascade, getExistingSession } from '../../src/db/ses
 import { getEffectiveStatus, STATUS_COLORS } from '../../src/utils/eventStatus';
 import { getPlannedSessionRoute } from '../../src/utils/plannedSessionRoute';
 import { startPlannedSession } from '../../src/utils/startSessionFlow';
+import { useReloadOnSessionEnded } from '../../src/utils/useSessionTimer';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -96,6 +97,7 @@ export default function CalendrierScreen() {
   }, [year, month]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useReloadOnSessionEnded(load);
 
   useLayoutEffect(() => {
     navigation.setOptions({

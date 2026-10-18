@@ -12,6 +12,8 @@ import { getUpdatePrefs, setUpdatePrefs } from '../src/db/settings';
 import { checkForUpdate } from '../src/utils/updateCheck';
 import { showUpdateAvailableAlert } from '../src/utils/updateAlert';
 import ActiveSessionBanner from '../src/components/ActiveSessionBanner';
+import SessionClock from '../src/components/SessionClock';
+import { restoreOpenSession } from '../src/db/session';
 
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -65,6 +67,10 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+
+  useEffect(() => {
+    restoreOpenSession().catch(() => {});
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -121,7 +127,7 @@ function RootLayoutNav() {
         <Stack.Screen name="seance/[sessionId]" options={{ headerShown: false }} />
         <Stack.Screen name="seance/details/[sessionId]" options={{ title: 'Détails de la séance' }} />
         <Stack.Screen name="seance/details/[sessionId]/modifier" options={{ title: 'Modifier la séance' }} />
-        <Stack.Screen name="seance/exercice/[logId]" options={{ title: 'Exercice' }} />
+        <Stack.Screen name="seance/exercice/[logId]" options={{ title: 'Exercice', headerRight: () => <SessionClock /> }} />
         <Stack.Screen name="seance/presets-repos" options={{ title: 'Temps de repos', presentation: 'modal' }} />
       </Stack>
       <ActiveSessionBanner />

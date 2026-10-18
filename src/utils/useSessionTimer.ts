@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { getActiveSession } from './activeSessionStore';
+import { getActiveSession, subscribeSessionEnded } from './activeSessionStore';
 
 export function useActiveSessionTick(intervalMs = 1000) {
   const [, setTick] = useState(0);
@@ -9,4 +9,9 @@ export function useActiveSessionTick(intervalMs = 1000) {
     return () => clearInterval(id);
   }, [intervalMs]);
   return getActiveSession();
+}
+
+/** Rappelle `reload` quand une séance est terminée ou annulée (depuis n'importe où). */
+export function useReloadOnSessionEnded(reload: () => void) {
+  useEffect(() => subscribeSessionEnded(reload), [reload]);
 }

@@ -8,6 +8,7 @@ import { calendarEvents, exercises, mesoExercises, mesoSessions, mesoSets, worko
 import { finishSession, startWorkoutSession } from '../../../../src/db/session';
 import { generateId } from '../../../../src/utils/generateId';
 import { startPlannedSession } from '../../../../src/utils/startSessionFlow';
+import { useReloadOnSessionEnded } from '../../../../src/utils/useSessionTimer';
 
 type MesoSession = typeof mesoSessions.$inferSelect;
 type Exercise = typeof exercises.$inferSelect;
@@ -92,6 +93,7 @@ export default function MesoSessionDetailScreen() {
   }, [mesoSessionId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useReloadOnSessionEnded(load);
 
   const move = async (index: number, dir: -1 | 1) => {
     const target = index + dir;

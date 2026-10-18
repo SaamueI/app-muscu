@@ -14,8 +14,6 @@ import {
 
 import {
   addFreeExerciseLog,
-  cancelWorkoutSession,
-  finishSession,
   getSessionLive,
   markExerciseDone,
   type ExerciseLogEnriched,
@@ -24,7 +22,9 @@ import {
 import { formatTargets } from '../../src/utils/formatTargets';
 import ExercisePicker from '../../src/components/ExercisePicker';
 import GlobalRestBanner from '../../src/components/GlobalRestBanner';
+import TimerDisplay from '../../src/components/TimerDisplay';
 import { getActiveSession, setActiveSession } from '../../src/utils/activeSessionStore';
+import { finishSessionNow, promptCancelSession } from '../../src/utils/sessionExitFlow';
 
 export default function LiveSessionScreen() {
   useKeepAwake();
@@ -40,9 +40,12 @@ export default function LiveSessionScreen() {
     const d = await getSessionLive(sessionId);
     setData(d);
 
+    // Copie en mémoire de la DB (source de vérité) : le widget et l'écran
+    // exercice lisent le store plutôt que de requêter chaque seconde.
+    const startedAt = d?.session.startedAt ? Date.parse(d.session.startedAt) : null;
     const s = getActiveSession();
-    if (s.sessionId !== sessionId) {
-      setActiveSession({ sessionId, bannerDismissed: false });
+    if (s.sessionId !== sessionId || s.sessionStartedAt !== startedAt) {
+      setActiveSession({ sessionId, sessionStartedAt: startedAt });
     }
   }, [sessionId]);
 
@@ -83,51 +86,24 @@ export default function LiveSessionScreen() {
     return groups;
   }
 
-  const doFinish = async () => {
-    if (!sessionId) return;
-    await finishSession(sessionId);
-    router.back();
-  };
-
   const handleFinish = () => {
     Alert.alert('Terminer la séance', 'Confirmer la fin de la séance ?', [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Terminer', style: 'destructive', onPress: doFinish },
+      {
+        text: 'Terminer',
+        style: 'destructive',
+        onPress: () => { if (sessionId) finishSessionNow(sessionId, () => router.back()); },
+      },
     ]);
   };
 
-  const doCancel = async () => {
-    if (!sessionId) return;
-    await cancelWorkoutSession(sessionId);
-    router.back();
+  const handleCancel = () => {
+    if (sessionId) promptCancelSession(sessionId, () => router.back());
   };
 
-  const confirmCancel = () => {
-    const setCount = exerciseLogs.reduce((n, el) => n + el.setLogs.length, 0);
-    if (setCount === 0) {
-      doCancel();
-      return;
-    }
-    const eventMsg = session.createdEvent
-      ? "L'événement du calendrier sera supprimé."
-      : 'La séance redeviendra planifiée dans le calendrier.';
-    Alert.alert(
-      'Annuler la séance',
-      `Les ${setCount} série${setCount > 1 ? 's' : ''} enregistrée${setCount > 1 ? 's' : ''} seront supprimées. ${eventMsg}`,
-      [
-        { text: 'Retour', style: 'cancel' },
-        { text: 'Annuler la séance', style: 'destructive', onPress: doCancel },
-      ]
-    );
-  };
-
-  const handleBackPress = () => {
-    Alert.alert('Quitter la séance', undefined, [
-      { text: 'Retour', style: 'cancel' },
-      { text: 'Interrompre', onPress: () => router.back() },
-      { text: 'Annuler la séance…', style: 'destructive', onPress: confirmCancel },
-    ]);
-  };
+  // La flèche interrompt simplement : la séance reste ouverte, le widget
+  // réapparaît sur les autres écrans.
+  const handleBackPress = () => router.back();
 
   const handleToggleDone = async (logId: string, isDone: boolean) => {
     await markExerciseDone(logId, !isDone);
@@ -214,9 +190,19 @@ export default function LiveSessionScreen() {
         <Pressable style={styles.backButton} onPress={handleBackPress} hitSlop={8}>
           <Text style={styles.backIcon}>‹</Text>
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {session.programSessionId || session.mesoSessionId ? 'Séance en cours' : 'Séance libre'}
-        </Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {session.programSessionId || session.mesoSessionId ? 'Séance en cours' : 'Séance libre'}
+          </Text>
+          {session.startedAt && (
+            <TimerDisplay
+              startedAt={Date.parse(session.startedAt)}
+              targetSeconds={null}
+              isRunning
+              style={styles.headerClock}
+            />
+          )}
+        </View>
         <Pressable style={styles.finishButton} onPress={handleFinish}>
           <Text style={styles.finishText}>Terminer</Text>
         </Pressable>
@@ -244,12 +230,17 @@ export default function LiveSessionScreen() {
         {exerciseLogs.length === 0 && (
           <Text style={styles.empty}>Aucun exercice. Ajoute-en un ci-dessous.</Text>
         )}
+      </ScrollView>
 
-        {/* Ajouter un exercice */}
+      {/* Actions fixes, hors du scroll */}
+      <View style={styles.footer}>
         <Pressable style={styles.addButton} onPress={handleAddExercise}>
           <Text style={styles.addText}>+ Ajouter un exercice</Text>
         </Pressable>
-      </ScrollView>
+        <Pressable style={styles.cancelButton} onPress={handleCancel}>
+          <Text style={styles.cancelText}>Annuler la séance</Text>
+        </Pressable>
+      </View>
 
       <Modal visible={showPicker} animationType="slide" onRequestClose={() => setShowPicker(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#f2f2f7' }}>
@@ -308,11 +299,17 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#007AFF',
   },
+  headerCenter: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 17,
     fontWeight: '600',
     color: '#1C1C1E',
-    flex: 1,
+  },
+  headerClock: {
+    fontSize: 13,
+    textAlign: 'left',
   },
   finishButton: {
     paddingHorizontal: 14,
@@ -432,6 +429,24 @@ const styles = StyleSheet.create({
   },
   addText: {
     color: '#007AFF',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+    gap: 2,
+    backgroundColor: '#F2F2F7',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#C6C6C8',
+  },
+  cancelButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: '#FF3B30',
     fontSize: 15,
     fontWeight: '500',
   },

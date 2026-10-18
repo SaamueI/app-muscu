@@ -16,6 +16,7 @@ import { deleteCalendarEventCascade, finishSession, getExistingSession } from '.
 import { getEffectiveStatus, STATUS_COLORS, STATUS_LABELS } from '../../src/utils/eventStatus';
 import { getPlannedSessionRoute } from '../../src/utils/plannedSessionRoute';
 import { startPlannedSession } from '../../src/utils/startSessionFlow';
+import { useReloadOnSessionEnded } from '../../src/utils/useSessionTimer';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -62,6 +63,7 @@ export default function JourDetailScreen() {
   }, [date]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useReloadOnSessionEnded(load);
 
   const handleStart = async (ev: CalendarEvent) => {
     setOpenMenu(null);
