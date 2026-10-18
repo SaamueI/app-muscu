@@ -284,6 +284,8 @@ export const userSettings = sqliteTable('user_settings', {
   updateCheckEnabled: integer('update_check_enabled', { mode: 'boolean' }).notNull().default(true),
   lastUpdateCheckAt: text('last_update_check_at'),
   skippedVersion: text('skipped_version'),
+  // Côté par lequel commencent les séries unilatérales ('L' | 'R'), le même partout.
+  firstSide: text('first_side').notNull().default('L'),
 });
 
 export type MemorizedSet = {

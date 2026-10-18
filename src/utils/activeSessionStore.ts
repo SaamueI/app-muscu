@@ -11,7 +11,12 @@ type ActiveSession = {
   currentSide: 'L' | 'R' | null;
   currentSetNumber: number;
   activeExerciseLogId: string | null;
-  lastRestPresets: Record<string, number>;
+  // Repos choisi par l'utilisateur pour un exercice (prime sur l'objectif du plan)
+  restOverrideByLog: Record<string, number>;
+  // « Repos ÷ 2 » (unilatéral), par exercice — éphémère, réinitialisé à chaque séance
+  halveRestByLog: Record<string, boolean>;
+  // Côté de départ choisi pour un exercice (prime sur le réglage Paramètres) — éphémère
+  startSideByLog: Record<string, 'L' | 'R'>;
   lastExecutionSeconds: number | null;
   restForExerciseName: string | null;
 };
@@ -27,7 +32,9 @@ const DEFAULT: ActiveSession = {
   currentSide: null,
   currentSetNumber: 1,
   activeExerciseLogId: null,
-  lastRestPresets: {},
+  restOverrideByLog: {},
+  halveRestByLog: {},
+  startSideByLog: {},
   lastExecutionSeconds: null,
   restForExerciseName: null,
 };

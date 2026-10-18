@@ -127,6 +127,13 @@
       "when": 1782700007000,
       "tag": "0017_set_log_note",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1782700008000,
+      "tag": "0018_user_first_side",
+      "breakpoints": true
     }
   ]
 }

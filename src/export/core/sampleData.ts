@@ -43,8 +43,8 @@ export const SAMPLE_MESOCYCLE: MesocycleExport = {
           ],
         },
         {
-          exerciseName: 'Développé militaire unilatéral',
-          selectedVariation: null,
+          exerciseName: 'Développé militaire haltères',
+          selectedVariation: 'unilatéral',
           supersetLabel: null,
           alternatives: [],
           note: null,

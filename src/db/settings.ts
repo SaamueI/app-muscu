@@ -27,6 +27,25 @@ export async function getUpdatePrefs(): Promise<UpdatePrefs> {
   };
 }
 
+// Côté par lequel commencent les séries unilatérales (même réglage partout).
+// Gauche par défaut, y compris tant que la ligne singleton n'existe pas.
+export async function getFirstSide(): Promise<'L' | 'R'> {
+  const [row] = await db.select().from(userSettings).where(eq(userSettings.id, 'singleton'));
+  return row?.firstSide === 'R' ? 'R' : 'L';
+}
+
+// Upsert qui ne touche QUE first_side : les autres colonnes gardent leur valeur
+// (ou leur DEFAULT si la ligne vient d'être créée).
+export async function setFirstSide(side: 'L' | 'R'): Promise<void> {
+  await db
+    .insert(userSettings)
+    .values({ id: 'singleton', firstSide: side })
+    .onConflictDoUpdate({
+      target: userSettings.id,
+      set: { firstSide: side },
+    });
+}
+
 export async function setUpdatePrefs(patch: Partial<UpdatePrefs>): Promise<void> {
   const current = await getUpdatePrefs();
   const next = { ...current, ...patch };

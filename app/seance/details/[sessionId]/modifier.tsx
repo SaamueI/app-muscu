@@ -17,6 +17,7 @@ import {
   type SessionLiveData,
   type SetLogData,
 } from '../../../../src/db/session';
+import { getFirstSide } from '../../../../src/db/settings';
 import { formatSetLine } from '../../../../src/utils/formatSetLine';
 
 type SetLogRow = typeof setLogs.$inferSelect;
@@ -43,6 +44,8 @@ export default function SessionEditScreen() {
 
   const [data, setData] = useState<SessionLiveData | null>(null);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  // Côté de départ des séries unilatérales (réglage Paramètres) : ajout, ordre d'affichage
+  const [firstSide, setFirstSide] = useState<'L' | 'R'>('L');
   const [modalVisible, setModalVisible] = useState(false);
   const [editContext, setEditContext] = useState<EditContext | null>(null);
   const [addContext, setAddContext] = useState<AddContext | null>(null);
@@ -53,6 +56,7 @@ export default function SessionEditScreen() {
     const d = await getSessionLive(sessionId);
     setData(d);
     setWeightUnit(await getUserWeightUnit());
+    setFirstSide(await getFirstSide());
   }, [sessionId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -114,7 +118,7 @@ export default function SessionEditScreen() {
       exerciseId: enriched.exercise.id,
       unit,
       setNumber: maxSetNumber + 1,
-      side: unilateral ? 'L' : null,
+      side: unilateral ? firstSide : null,
       unilateral,
     });
     setModalVisible(true);
@@ -135,9 +139,9 @@ export default function SessionEditScreen() {
   const handleSaveAdd = async (data: SetLogData) => {
     if (!addContext) return;
     await saveSetLog(addContext.exerciseLogId, data, addContext.setNumber, addContext.side ?? undefined);
-    if (addContext.unilateral && addContext.side === 'L') {
+    if (addContext.unilateral && addContext.side === firstSide) {
       setAddPrefill(data);
-      setAddContext({ ...addContext, side: 'R' });
+      setAddContext({ ...addContext, side: firstSide === 'L' ? 'R' : 'L' });
       load();
     } else {
       closeModal();
@@ -266,10 +270,12 @@ export default function SessionEditScreen() {
                 <Text style={styles.emptyText}>Aucune série enregistrée</Text>
               ) : (
                 enriched.setLogs.map((sl, i) => {
-                  if (sl.side === 'R') return null;
-                  const partner = enriched.setLogs.find(
-                    (x) => x.setNumber === sl.setNumber && x.side === 'R'
-                  );
+                  const otherSide = sl.side === 'L' ? 'R' : 'L';
+                  const partner = sl.side
+                    ? enriched.setLogs.find((x) => x.setNumber === sl.setNumber && x.side === otherSide)
+                    : undefined;
+                  // Le côté de départ porte la ligne ; l'autre s'affiche dessous (sauf s'il est seul)
+                  if (sl.side && sl.side !== firstSide && partner) return null;
                   const setNum = sl.setNumber ?? i + 1;
                   const posIndex = setNumbers.indexOf(setNum);
                   const canMoveUp = posIndex > 0;
@@ -301,7 +307,7 @@ export default function SessionEditScreen() {
                         <Text style={styles.setNum}>#{setNum}</Text>
                         <View style={styles.setBody}>
                           <Text style={styles.setLineText}>
-                            {sl.side ? 'G : ' : ''}{formatSetLine(sl, unit)}
+                            {sl.side ? (sl.side === 'L' ? 'G : ' : 'D : ') : ''}{formatSetLine(sl, unit)}
                           </Text>
                           <SetNote note={sl.note} />
                         </View>
@@ -316,7 +322,7 @@ export default function SessionEditScreen() {
                           <Text style={styles.setNum} />
                           <View style={styles.setBody}>
                             <Text style={[styles.setLineText, styles.setLineSub]}>
-                              D : {formatSetLine(partner, unit)}
+                              {partner.side === 'L' ? 'G' : 'D'} : {formatSetLine(partner, unit)}
                             </Text>
                             <SetNote note={partner.note} />
                           </View>

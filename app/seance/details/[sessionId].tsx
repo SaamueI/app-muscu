@@ -10,9 +10,9 @@ import {
   getUserWeightUnit,
   type SessionLiveData,
 } from '../../../src/db/session';
+import { getFirstSide } from '../../../src/db/settings';
 import { STATUS_COLORS, STATUS_LABELS } from '../../../src/utils/eventStatus';
-import SetNote from '../../../src/components/SetNote';
-import { formatSetLine } from '../../../src/utils/formatSetLine';
+import SetLogList from '../../../src/components/live/SetLogList';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -36,6 +36,7 @@ export default function SessionDetailsScreen() {
   const [data, setData] = useState<SessionLiveData | null>(null);
   const [event, setEvent] = useState<CalendarEvent | null>(null);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  const [firstSide, setFirstSide] = useState<'L' | 'R'>('L');
 
   const load = useCallback(async () => {
     if (!sessionId) return;
@@ -51,6 +52,7 @@ export default function SessionDetailsScreen() {
       setEvent(null);
     }
     setWeightUnit(await getUserWeightUnit());
+    setFirstSide(await getFirstSide());
   }, [sessionId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -103,32 +105,7 @@ export default function SessionDetailsScreen() {
             {enriched.setLogs.length === 0 ? (
               <Text style={styles.emptyText}>Aucune série enregistrée</Text>
             ) : (
-              enriched.setLogs.map((sl, i) => {
-                if (sl.side === 'R') return null;
-                const partner = enriched.setLogs.find(
-                  (x) => x.setNumber === sl.setNumber && x.side === 'R'
-                );
-                const setNum = sl.setNumber ?? i + 1;
-                return (
-                  <View key={sl.id} style={styles.setRow}>
-                    <Text style={styles.setNum}>#{setNum}</Text>
-                    <View style={styles.setDetails}>
-                      <Text style={styles.setLine}>
-                        {sl.side ? 'G : ' : ''}{formatSetLine(sl, unit)}
-                      </Text>
-                      <SetNote note={sl.note} />
-                      {partner && (
-                        <>
-                          <Text style={[styles.setLine, styles.setLineSub]}>
-                            D : {formatSetLine(partner, unit)}
-                          </Text>
-                          <SetNote note={partner.note} />
-                        </>
-                      )}
-                    </View>
-                  </View>
-                );
-              })
+              <SetLogList setLogs={enriched.setLogs} weightUnit={unit} firstSide={firstSide} />
             )}
           </View>
         );
