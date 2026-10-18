@@ -68,6 +68,8 @@ src/
     WeekPickerField.tsx     # Calendrier inline react-native-calendars, sélection à la semaine ; props: value: string (ISO "YYYY-Www"), onChange
     GlobalRestBanner.tsx    # Bandeau repos en cours (phase 11) ; prop excludeLogId
     ActiveSessionBanner.tsx # Bandeau reprise séance globale (phase 11), déplaçable ; croix = alerte Annuler/Terminer/Retour
+    live/ObjectivesList.tsx # Objectifs + avancement vert/bleu (amélioration 13, réutilisé par le superset)
+    live/SetLogList.tsx     # Séries enregistrées G/D (côté de départ en premier) ; sans callbacks = lecture seule
     SessionClock.tsx        # Chrono global de séance pour les headers natifs (amélioration 11)
     ImportScreen.tsx        # Écran d'import générique réutilisé par méso/programme (phase 12)
   utils/
@@ -75,8 +77,9 @@ src/
     altPickerStore.ts      # Store module-level pour passer un exo entre écrans
     mesoDeletePref.ts      # Flag "ne plus demander" suppression de séance
     activeSessionStore.ts  # Store éphémère timer en cours de séance (+ sessionStartedAt)
+    exerciseProgress.ts    # Moteur PUR d'avancement (computeProgress, isUnilateralHint, getEffectiveRest) — `npm run test:progress`
     sessionExitFlow.ts     # promptCancelSession / finishSessionNow / promptExitSession (écran séance + widget)
-    useSessionTimer.ts     # Hook useActiveSessionTick (tick 1s pour les bandeaux, phase 11)
+    useSessionTimer.ts     # Hooks useActiveSessionTick (tick 1s, phase 11) + useReloadOnSessionEnded (recharge un écran quand une séance finit/est annulée)
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
     eventStatus.ts         # Labels/couleurs statut event + getEffectiveStatus (déduit "en cours")
   export/                  # Phases 8 + 12 — export/import XLSX + CSV (voir sections dédiées)
@@ -119,7 +122,7 @@ Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.cr
 
 **Piège découvert avec la migration 0014 (plusieurs `ALTER TABLE` dans un même fichier) :** le migrateur Expo/Drizzle (`node_modules/drizzle-orm/expo-sqlite/migrator.js`) ne découpe un fichier `.sql` en instructions séparées que sur le marqueur littéral `--> statement-breakpoint`. Sans ce marqueur, tout le fichier est envoyé en un seul bloc à `NativeDatabase.prepareSync`, qui ne compile et n'exécute **que la toute première instruction** — les suivantes sont silencieusement ignorées, sans erreur, et la migration est quand même marquée comme appliquée. Toujours séparer chaque instruction SQL par une ligne `--> statement-breakpoint` dès qu'un fichier de migration en contient plus d'une (voir `0010_workout_session_live.sql` ou `0011_meso_calendar_anchor.sql` pour l'exemple). Un fichier à une seule instruction n'en a pas besoin.
 
-**Prochain `when` disponible** : > `1782700007000` (dernière migration : 0017).
+**Prochain `when` disponible** : > `1782700008000` (dernière migration : 0018).
 
 **Diagramme ER** : [docs/schema-diagramme.md](docs/schema-diagramme.md) (Mermaid, en code — pas besoin de le compiler). **Toute session qui modifie le schéma** (nouvelle colonne, nouvelle table, migration) doit le régénérer avant de terminer, à partir de `src/db/schema.ts` — comparer champ par champ avec la version existante plutôt que de tout réécrire à l'aveugle.
 
@@ -176,6 +179,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0015 | update_settings_fix | `user_settings.last_update_check_at` + `skipped_version` — suite de la 0014, qui n'ajoutait que la première colonne (piège multi-instructions, voir ci-dessus) |
 | 0016 | meso_exercise_note | `meso_exercises.note` (amélioration 06) |
 | 0017 | set_log_note | `set_logs.note` (amélioration 12 : note par série) |
+| 0018 | user_first_side | `user_settings.first_side` (amélioration 13 : côté de départ unilatéral, `'L'` par défaut) |
 
 ---
 
@@ -251,6 +255,9 @@ Détails complets : [docs/phase-12-import-dedie.md](docs/phase-12-import-dedie.m
 useFocusEffect(useCallback(() => { load(); }, [load]));
 ```
 
+### Rafraîchissement quand une séance se termine hors navigation
+`useFocusEffect` ne suffit pas : terminer/annuler depuis la croix du widget (`ActiveSessionBanner`) ne change pas d'écran, donc aucun focus. Tout écran qui affiche l'état « séance en cours » (calendrier, séance planifiée, détail méso) ajoute `useReloadOnSessionEnded(load)` (`src/utils/useSessionTimer.ts`) ; `finishSession`/`cancelWorkoutSession` notifient via `notifySessionEnded()`.
+
 ### Passage de données entre écrans
 Stores module-level (pas de Context) : `altPickerStore.ts`, `mesoDeletePref.ts`.
 
@@ -283,6 +290,7 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 9 | Ancrage calendaire des mésocycles | ✅ |
 | 10 | Détails de séance : écran détail + mode édition des séries (ajout/suppression/réorganisation) + accès depuis calendrier + états/accès depuis méso ancré | ✅ |
 | 11 | Séance live : préremplissage par dernières perfs, chrono de repos visible partout, interruption de séance + bandeau de reprise déplaçable, état "en cours" du calendrier | ✅ |
+| 11bis | Amélioration 11 : chrono global de séance (écran séance, écran exercice, widget), flèche = interrompre, croix du widget = Annuler/Terminer/Retour, ré-hydratation après kill de l'app | ✅ |
 | 12 | Import : écrans dédiés, prompt LLM copiable (+ catalogue existant), import CSV, templates, anti-doublons d'exercices (prompt enrichi + réconciliation post-import) | ✅ |
 
 ## Phases restantes
@@ -318,7 +326,7 @@ Les numéros de migration sont attribués **au moment de l'implémentation** (le
 
 **10 implémenté (révisé deux fois : `mailto:` puis Web3Forms, abandonnés) :** section « Aide » de `app/parametres.tsx` (Signaler un bug / Envoyer une suggestion) → écran modal `app/feedback.tsx` où l'utilisateur tape son message directement dans l'app (bloc diagnostic version/plateforme/appareil affiché en lecture seule, sans donnée d'entraînement, ajouté automatiquement). Envoi via `src/utils/feedback.ts` → relais [EmailJS](https://www.emailjs.com/) en mode « API non-navigateur » (Account → Security), POST JSON avec Public Key + Private Key (`accessToken` — au niveau du compte entier, pas juste ce template, cf. doc), identifiants lus depuis `.env` (voir « Variables d'environnement » ci-dessus). **Web3Forms écarté** : leur offre gratuite bloque tout appel qui n'a pas le contexte d'une vraie page web chargée (`HTTP 403`, confirmé par `curl` et sur device), fonctionnalité réservée à leur offre Pro. Échec réseau : message tapé conservé dans le champ, option « Copier le message ». Détail de la révision : [docs/ameliorations/10-signaler-bug-suggestion.md](docs/ameliorations/10-signaler-bug-suggestion.md#révision--implémentation-in-app-remplace-le-mailto-ci-dessus).
 
-Fixes 01 (menu calendrier « Voir la séance planifiée »), 02 (annuler une séance commencée), 03 (header exercice live tappable), 04 (cohérence calendrier × date d'encodage), 05 (sections « Performances » vides) et 06 (suppression d'un exercice utilisé) implémentés. Fix 01 : `src/utils/plannedSessionRoute.ts` (`getPlannedSessionRoute`) résout `refType`/`refId` → route méso ou programme (fallback `program_session` si `refType` absent, cf. `startWorkoutSession`) ; entrée de menu dans `app/calendrier/[date].tsx` et `app/(tabs)/calendrier.tsx`. Fix 02/04 : migration 0012, `cancelWorkoutSession`/`startWorkoutSession` dans `src/db/session.ts`, `src/utils/startSessionFlow.ts` ; annulation sans confirmation supplémentaire si 0 série enregistrée (`confirmCancel` dans `app/seance/[sessionId].tsx`). Fix 03 : `app/seance/exercice/[logId].tsx` affiche le nom de l'exercice dans une `View` juste avant la section « Objectifs » (pas de header dynamique, pas de navigation). Fix 05 : `app/exercices/[id].tsx` et l'écran exercice de programme (`app/programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId].tsx`) utilisent `getPreviousPerfs`/`getUserWeightUnit` (`src/db/session.ts`) au lieu d'un placeholder statique / d'une requête filtrée sur `programExerciseId`. Fix 06 : `getExerciseUsage`/`deleteExerciseCascade` ajoutés à `src/db/exerciseMerge.ts` (aux côtés de `remapExercise`, phase 12) ; `app/exercices/[id].tsx` — `handleDelete` détecte les usages et propose Annuler / « Remplacer par… » (Modal + `ExercisePicker`, exclusion manuelle de l'exercice courant) / « Tout supprimer… » (double confirmation Android-safe, ≤3 boutons par alerte).
+Fixes 01 (menu calendrier « Voir la séance planifiée »), 02 (annuler une séance commencée), 03 (header exercice live tappable), 04 (cohérence calendrier × date d'encodage), 05 (sections « Performances » vides) et 06 (suppression d'un exercice utilisé) implémentés. Fix 01 : `src/utils/plannedSessionRoute.ts` (`getPlannedSessionRoute`) résout `refType`/`refId` → route méso ou programme (fallback `program_session` si `refType` absent, cf. `startWorkoutSession`) ; entrée de menu dans `app/calendrier/[date].tsx` et `app/(tabs)/calendrier.tsx`. Fix 02/04 : migration 0012, `cancelWorkoutSession`/`startWorkoutSession` dans `src/db/session.ts`, `src/utils/startSessionFlow.ts` ; annulation sans confirmation supplémentaire si 0 série enregistrée (`promptCancelSession` dans `src/utils/sessionExitFlow.ts`, depuis l'amélioration 11). Fix 03 : `app/seance/exercice/[logId].tsx` affiche le nom de l'exercice dans une `View` juste avant la section « Objectifs » (pas de header dynamique, pas de navigation). Fix 05 : `app/exercices/[id].tsx` et l'écran exercice de programme (`app/programmes/[id]/sessions/[sessionId]/exercises/[programExerciseId].tsx`) utilisent `getPreviousPerfs`/`getUserWeightUnit` (`src/db/session.ts`) au lieu d'un placeholder statique / d'une requête filtrée sur `programExerciseId`. Fix 06 : `getExerciseUsage`/`deleteExerciseCascade` ajoutés à `src/db/exerciseMerge.ts` (aux côtés de `remapExercise`, phase 12) ; `app/exercices/[id].tsx` — `handleDelete` détecte les usages et propose Annuler / « Remplacer par… » (Modal + `ExercisePicker`, exclusion manuelle de l'exercice courant) / « Tout supprimer… » (double confirmation Android-safe, ≤3 boutons par alerte).
 
 ---
 

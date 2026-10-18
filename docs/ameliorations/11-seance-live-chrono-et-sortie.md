@@ -1,6 +1,12 @@
 # 11 — Séance live : chrono global + sortie de séance
 
-> **Statut : ✅ implémenté (2026-10-18)** — `tsc` à 0 erreur, **non testé sur device** (vérification ci-dessous à faire). Écart au plan : le chrono de l'écran exercice est posé via `headerRight` dans `app/_layout.tsx` (composant `SessionClock`) plutôt que `navigation.setOptions`. Ré-hydratation (question 4) : `restoreOpenSession` dans `src/db/session.ts`, appelée au lancement.
+> **Statut : ✅ implémenté et validé par l'utilisateur (2026-10-18)** — `tsc` à 0 erreur.
+>
+> **Notes d'implémentation (écarts et ajouts par rapport au plan) :**
+> - Chrono de l'écran exercice posé via `headerRight` dans `app/_layout.tsx` (composant `src/components/SessionClock.tsx`) plutôt que `navigation.setOptions` : même rendu, l'écran exercice n'est pas touché.
+> - Ré-hydratation (question 4) : `restoreOpenSession` dans `src/db/session.ts`, appelée au lancement depuis `app/_layout.tsx`.
+> - Boutons « + Ajouter un exercice » et « Annuler la séance » dans un **pied de page fixe** sous la `ScrollView` (et non en bas de liste comme écrit au § D) : toujours visibles quelle que soit la longueur de la liste.
+> - **Bug découvert après coup** : la croix du widget annule/termine sans navigation, donc les écrans déjà affichés (séance planifiée « Poursuivre / Terminer », calendrier, détail d'un méso) ne recevaient pas de nouveau focus et restaient périmés. Correctif : `finishSession` et `cancelWorkoutSession` appellent `notifySessionEnded()` (`activeSessionStore.ts`) ; les 4 écrans concernés s'abonnent via le hook `useReloadOnSessionEnded(load)` (`useSessionTimer.ts`).
 > Décisions actées (2026-10-08) : Toutes les recommandations ci-dessous ont été validées.
 
 Deux demandes regroupées parce qu'elles touchent les mêmes fichiers (`app/seance/[sessionId].tsx`, `src/components/ActiveSessionBanner.tsx`, `src/utils/activeSessionStore.ts`).

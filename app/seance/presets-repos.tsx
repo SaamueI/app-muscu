@@ -7,10 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
+import DurationPickerModal from '../../src/components/DurationPickerModal';
 import { addRestPreset, deleteRestPreset, getRestPresets } from '../../src/db/session';
 
 type Preset = { id: string; seconds: number; sortOrder: number };
@@ -24,7 +24,7 @@ function secondsToLabel(s: number): string {
 
 export default function PresetsReposScreen() {
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [newValue, setNewValue] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const load = useCallback(async () => {
     const rows = await getRestPresets();
@@ -33,14 +33,13 @@ export default function PresetsReposScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const handleAdd = async () => {
-    const seconds = parseInt(newValue, 10);
-    if (isNaN(seconds) || seconds <= 0) {
-      Alert.alert('Valeur invalide', 'Entrez un nombre de secondes supérieur à 0.');
+  const handleAdd = async (seconds: number) => {
+    setPickerOpen(false);
+    if (presets.some((p) => p.seconds === seconds)) {
+      Alert.alert('Déjà présent', `${secondsToLabel(seconds)} fait déjà partie des raccourcis.`);
       return;
     }
     await addRestPreset(seconds);
-    setNewValue('');
     load();
   };
 
@@ -74,19 +73,17 @@ export default function PresetsReposScreen() {
           </View>
         ))}
 
-        <View style={styles.addRow}>
-          <TextInput
-            style={styles.input}
-            value={newValue}
-            onChangeText={setNewValue}
-            keyboardType="number-pad"
-            placeholder="Durée en secondes"
-          />
-          <Pressable style={styles.addBtn} onPress={handleAdd}>
-            <Text style={styles.addText}>Ajouter</Text>
-          </Pressable>
-        </View>
+        <Pressable style={styles.addBtn} onPress={() => setPickerOpen(true)}>
+          <Text style={styles.addText}>+ Ajouter une durée</Text>
+        </Pressable>
       </ScrollView>
+      <DurationPickerModal
+        visible={pickerOpen}
+        title="Nouveau raccourci de repos"
+        confirmLabel="Ajouter"
+        onClose={() => setPickerOpen(false)}
+        onConfirm={handleAdd}
+      />
     </SafeAreaView>
   );
 }
@@ -106,23 +103,12 @@ const styles = StyleSheet.create({
   label: { flex: 1, fontSize: 16, color: '#1C1C1E' },
   deleteBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   deleteText: { color: '#FF3B30', fontSize: 15 },
-  addRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  input: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
   addBtn: {
     backgroundColor: '#007AFF',
     borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    justifyContent: 'center',
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
   },
   addText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
 });

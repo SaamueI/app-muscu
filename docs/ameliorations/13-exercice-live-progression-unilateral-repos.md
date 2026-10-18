@@ -1,6 +1,6 @@
 # 13 — Exercice live : avancement, unilatéral et temps de repos
 
-> **Statut : ✅ décisions actées (2026-10-08)** — prêt à implémenter (après le plan 12).
+> **Statut : ✅ implémenté et validé sur device (typecheck 0 erreur + `npm run test:progress` vert).**
 
 Quatre demandes regroupées parce qu'elles reposent sur **la même mécanique** : savoir, à tout instant, quelle série/quel côté est fait, en cours, à venir — et quel repos appliquer.
 
@@ -146,3 +146,15 @@ Toutes tranchées : source de l'unilatéral (§ C), mode porté par chaque séri
 - Repos prévu 2:00 + ÷2 → 1:00 après chaque côté.
 - Repos prévu 2:00, tap sur 3:00 pendant le repos → compte à rebours ajusté, et 3:00 au repos suivant.
 - `npm run test:progress` vert, `npx tsc --noEmit` à 0.
+
+## Notes d'implémentation
+
+- **Moteur** : `src/utils/exerciseProgress.ts` (`computeProgress`, `isUnilateralHint`, `getEffectiveRest`, `fixedPlannedSets`) + `scripts/testExerciseProgress.ts` (`npm run test:progress`, 43 assertions). L'écran `[logId].tsx` ne tient plus aucun compteur : `progress.next` est recalculé à chaque rendu depuis `enriched.setLogs`. Le store garde `currentSetNumber`/`currentSide` uniquement comme « série dont le repos court » (posés par Terminer/Commencer).
+- **Composants extraits** : `src/components/live/ObjectivesList.tsx` et `SetLogList.tsx` (aussi utilisé en lecture seule pour l'historique et l'écran Détails). `SetLogList` utilise le `formatSetLine` partagé (`src/utils/formatSetLine.ts`) : la liste live affiche donc aussi les partielles et le temps d'exécution, comme Détails.
+- **Repos** : `RestPresetPicker` reçoit `overrideSeconds` / `plannedSeconds` / `onSelectPlanned`. Le chip « Prévu » remet l'objectif du plan (qui peut varier par série) ; un autre chip devient `restOverrideByLog[logId]`. Le picker reste limité aux phases repos/idle (pas en exécution). **Changement de comportement** : en phase idle, taper un chip règle seulement le repos (avant, ça lançait un chrono de repos).
+- **Sauvegarde d'une série en unilatéral** : le repos lancé par « Terminer série » court jusqu'au bout après l'enregistrement. L'ancien code relançait un chrono neuf à l'enregistrement du côté D (avec le repos *non* divisé) : supprimé, incompatible avec le ÷ 2.
+- **Pré-toggle** : appliqué une seule fois par ouverture de l'écran (ref), à partir de la variante prévue + des lignes G/D de la séance en cours et de la dernière séance.
+- **Côté de départ** : migration 0018, `getFirstSide`/`setFirstSide` (`src/db/settings.ts`), chips Gauche/Droite dans Paramètres, consommé par `computeProgress`, l'écran live, l'écran Détails et `modifier.tsx` (ajout de série + ordre d'affichage).
+- **Prompt LLM / template** : règle « Variation … unilatéral » dans `formatDoc.ts`, exemple `Développé militaire haltères` + variante `unilatéral` dans `sampleData.ts` ; tests d'export/import CSV et XLSX toujours verts.
+- **Retours après premier essai** : (1) sur l'écran live, quand « Unilatéral » est activé, une ligne « Commencer par : Gauche / Droite » (grisée pendant une série à moitié faite) ; le choix est éphémère, par exercice (`startSideByLog` dans le store) et prime sur le réglage Paramètres. (2) Picker de repos : chips qui passent à la ligne (plus de scroll horizontal caché), chip « ＋ Autre » qui ouvre `src/components/DurationPickerModal.tsx` (minutes + secondes, champs + boutons −/+), chip dédiée pour une durée perso en cours, lien « Modifier les raccourcis ». Le même modal remplace la saisie en secondes de `app/seance/presets-repos.tsx`.
+

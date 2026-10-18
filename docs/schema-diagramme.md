@@ -180,6 +180,7 @@ erDiagram
         boolean update_check_enabled
         text last_update_check_at
         text skipped_version
+        text first_side "L ou R, défaut L"
     }
 
     PROGRAMS ||--o{ PROGRAM_SESSIONS : "has"

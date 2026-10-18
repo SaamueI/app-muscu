@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 
-import { getUpdatePrefs, setUpdatePrefs } from '../src/db/settings';
+import { getFirstSide, getUpdatePrefs, setFirstSide, setUpdatePrefs } from '../src/db/settings';
 import { getAppVersion } from '../src/utils/appVersion';
 import { checkForUpdate } from '../src/utils/updateCheck';
 import { showUpdateAvailableAlert } from '../src/utils/updateAlert';
@@ -32,13 +32,20 @@ export default function ParametresScreen() {
   const [enabled, setEnabled] = useState(true);
   const [lastCheckAt, setLastCheckAt] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [firstSide, setFirstSideState] = useState<'L' | 'R'>('L');
 
   useEffect(() => {
     getUpdatePrefs().then((prefs) => {
       setEnabled(prefs.enabled);
       setLastCheckAt(prefs.lastCheckAt);
     });
+    getFirstSide().then(setFirstSideState);
   }, []);
+
+  const handleSelectFirstSide = async (side: 'L' | 'R') => {
+    setFirstSideState(side);
+    await setFirstSide(side);
+  };
 
   const handleToggleEnabled = async (value: boolean) => {
     setEnabled(value);
@@ -67,6 +74,27 @@ export default function ParametresScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
+      {/* Séance */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Séance</Text>
+        <View style={[styles.row, { borderBottomWidth: 0 }]}>
+          <Text style={styles.rowText}>Unilatéral : commencer par</Text>
+          <View style={styles.chipRow}>
+            {(['L', 'R'] as const).map((side) => (
+              <Pressable
+                key={side}
+                style={[styles.chip, firstSide === side && styles.chipActive]}
+                onPress={() => handleSelectFirstSide(side)}
+              >
+                <Text style={[styles.chipText, firstSide === side && styles.chipTextActive]}>
+                  {side === 'L' ? 'Gauche' : 'Droite'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </View>
 
       {/* Mises à jour */}
       <View style={styles.section}>
@@ -153,6 +181,11 @@ const styles = StyleSheet.create({
   rowText: { fontSize: 15, color: '#333' },
   rowValue: { fontSize: 15, color: '#888' },
   helpRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  chipRow: { flexDirection: 'row', gap: 6 },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 18, backgroundColor: '#f2f2f7' },
+  chipActive: { backgroundColor: '#007AFF' },
+  chipText: { fontSize: 14, fontWeight: '500', color: '#1C1C1E' },
+  chipTextActive: { color: '#fff' },
 
   checkBtn: {
     backgroundColor: '#007AFF', marginTop: 14,

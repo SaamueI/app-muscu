@@ -18,6 +18,7 @@ const CONVENTIONS = `
 - Repos / Durée : "mm:ss" (ex. "1:30") ou un nombre de secondes (ex. "90").
 - Superset : une même lettre (A, B, C…) sur plusieurs exercices d'une même séance les regroupe en superset ; laisser vide si l'exercice est seul.
 - Alternatives : plusieurs noms d'exercices séparés par " ; ".
+- Variation : pour un exercice exécuté un côté à la fois (unilatéral), la colonne Variation DOIT contenir le mot « unilatéral » (ex. « unilatéral », « unilatéral, prise neutre ») ; le nom de l'exercice reste le nom du catalogue.
 - Les exercices sont retrouvés par leur NOM exact (insensible à la casse et aux espaces). Si un nom est inconnu, un exercice personnalisé minimal est créé automatiquement — soigner l'orthographe pour retrouver les exercices déjà existants.
 - Encodage : UTF-8 requis pour les fichiers .csv.
 `.trim();

@@ -1,0 +1,1 @@
+ALTER TABLE `user_settings` ADD COLUMN `first_side` text DEFAULT 'L' NOT NULL;

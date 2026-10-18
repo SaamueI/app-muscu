@@ -14,8 +14,9 @@ import {
 
 import { ExerciseImageCarousel } from '../../../src/components/ExerciseImageCarousel';
 import GlobalRestBanner from '../../../src/components/GlobalRestBanner';
+import ObjectivesList from '../../../src/components/live/ObjectivesList';
+import SetLogList from '../../../src/components/live/SetLogList';
 import RestPresetPicker from '../../../src/components/RestPresetPicker';
-import SetNote from '../../../src/components/SetNote';
 import SetPerformanceModal from '../../../src/components/SetPerformanceModal';
 import TimerDisplay from '../../../src/components/TimerDisplay';
 import { db } from '../../../src/db';
@@ -28,18 +29,24 @@ import {
   getSessionLive,
   getUserWeightUnit,
   markExerciseDone,
+  renumberSetsAfterDelete,
   saveSetLog,
   updateSetLog,
   type ExerciseLogEnriched,
   type PerfGroup,
   type SetLogData,
 } from '../../../src/db/session';
+import { getFirstSide } from '../../../src/db/settings';
 import {
   getActiveSession,
   setActiveSession
 } from '../../../src/utils/activeSessionStore';
-import { formatTargets } from '../../../src/utils/formatTargets';
-import { formatWeight } from '../../../src/utils/weightUtils';
+import {
+  computeProgress,
+  fixedPlannedSets,
+  getEffectiveRest,
+  isUnilateralHint,
+} from '../../../src/utils/exerciseProgress';
 
 type SetLogRow = typeof setLogs.$inferSelect;
 
@@ -59,12 +66,22 @@ export default function ExerciceDetailLiveScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSetLog, setEditingSetLog] = useState<SetLogRow | null>(null);
   const autoFiredRef = useRef(false);
+  // Prochaine série à démarrer, lue par le timer auto (l'intervalle ne se recrée pas à
+  // chaque rendu : il passe par cette ref pour avoir la valeur à jour).
+  const autoStartRef = useRef<{ setNumber: number; side: 'L' | 'R' | null; execSeconds: number | null }>({
+    setNumber: 1,
+    side: null,
+    execSeconds: null,
+  });
+  // Le pré-réglage « Unilatéral » ne s'applique qu'une fois par ouverture de l'écran,
+  // sinon il écraserait le choix manuel de l'utilisateur à chaque retour sur l'écran.
+  const hintAppliedRef = useRef(false);
 
-  // État local : ce que propose cet écran tant qu'il ne possède pas le timer
-  // global (utilisé seulement quand cet exercice n'est pas l'exercice actif).
-  const [localNextSetNumber, setLocalNextSetNumber] = useState(1);
+  // Côté de départ des séries unilatérales (réglage Paramètres)
+  const [defaultFirstSide, setDefaultFirstSide] = useState<'L' | 'R'>('L');
+  // Toggle « Unilatéral » tant que cet exercice n'est pas l'exercice actif du timer
+  // global ; quand il l'est, la valeur vit dans le store (activeSessionStore).
   const [localIsUnilateral, setLocalIsUnilateral] = useState(false);
-  const [localCurrentSide, setLocalCurrentSide] = useState<'L' | 'R' | null>(null);
 
   // ─── Chargement initial ───────────────────────────────────────────────────
 
@@ -97,24 +114,22 @@ export default function ExerciceDetailLiveScreen() {
     const exUnit = logRow.exercise.weightUnit as 'kg' | 'lb' | null;
     setWeightUnit(exUnit ?? userUnit);
 
-    // Compteurs locaux déduits des séries enregistrées. En unilatéral il y a 2 lignes
-    // par série (G puis D) : « longueur + 1 » donnerait un mauvais numéro, on part donc
-    // du plus grand setNumber, et d'un éventuel côté D encore manquant.
-    const logged = found?.setLogs ?? [];
-    const maxN = logged.reduce((m, l) => Math.max(m, l.setNumber ?? 0), 0);
-    if (logged.some((l) => l.side)) {
-      const hasL = logged.some((l) => l.setNumber === maxN && l.side === 'L');
-      const hasR = logged.some((l) => l.setNumber === maxN && l.side === 'R');
-      setLocalIsUnilateral(true);
-      if (hasL && !hasR) {
-        setLocalNextSetNumber(maxN);
-        setLocalCurrentSide('R');
-      } else {
-        setLocalNextSetNumber(maxN + 1);
-        setLocalCurrentSide('L');
+    setDefaultFirstSide(await getFirstSide());
+
+    // Pré-réglage du toggle « Unilatéral » (une fois par ouverture) : variante prévue
+    // « unilatéral », ou séries G/D déjà vues (cette séance + dernière séance).
+    if (!hintAppliedRef.current) {
+      hintAppliedRef.current = true;
+      if (getActiveSession().activeExerciseLogId !== logId) {
+        const variation =
+          found?.mesoExercise?.selectedVariation ?? found?.programExercise?.selectedVariation ?? null;
+        setLocalIsUnilateral(
+          isUnilateralHint({
+            variation,
+            lastPerf: [...(found?.setLogs ?? []), ...(perfs[0]?.sets ?? [])],
+          })
+        );
       }
-    } else {
-      setLocalNextSetNumber(maxN + 1);
     }
   }, [logId]);
 
@@ -139,10 +154,13 @@ export default function ExerciceDetailLiveScreen() {
           if (autoFiredRef.current) return;
           autoFiredRef.current = true;
           // Démarrer automatiquement la prochaine exécution
+          const nextUp = autoStartRef.current;
           setActiveSession({
             timerPhase: 'execution',
             timerStartedAt: Date.now(),
-            timerTargetSeconds: getTargetExecutionSeconds(s.currentSetNumber),
+            timerTargetSeconds: nextUp.execSeconds,
+            currentSetNumber: nextUp.setNumber,
+            currentSide: nextUp.side,
           });
         }
       }
@@ -210,118 +228,164 @@ export default function ExerciceDetailLiveScreen() {
     return enriched.setLogs.find((sl) => sl.setNumber === setNumber - 1 && sideFilter(sl)) ?? null;
   }
 
+  // ─── Avancement : dérivé des séries enregistrées, aucun compteur à la main ─
+
+  const s = getActiveSession();
+  const isActive = s.activeExerciseLogId === logId;
+  const phase = isActive ? s.timerPhase : 'idle';
+  const toggleUnilateral = isActive ? s.isUnilateral : localIsUnilateral;
+  const loggedSets = enriched?.setLogs ?? [];
+  // Séries prévues : méso = une ligne par série ; programme = seulement si N fixe
+  const plannedSetCount = enriched
+    ? enriched.mesoSets.length > 0
+      ? enriched.mesoSets.length
+      : fixedPlannedSets(enriched.programExercise?.targetSetsMin, enriched.programExercise?.targetSetsMax)
+    : 0;
+  // Côté de départ : choix fait sur cet écran, sinon réglage Paramètres
+  const firstSide = s.startSideByLog[logId ?? ''] ?? defaultFirstSide;
+  const progress = computeProgress({
+    setLogs: loggedSets,
+    plannedSetCount,
+    isUnilateral: toggleUnilateral,
+    firstSide,
+  });
+  const effSetNumber = progress.next.setNumber;
+  const effCurrentSide = progress.next.side;
+  // Série à moitié faite (un côté enregistré) : on ne change pas de mode en cours de route.
+  const halfDone = loggedSets.some((l) => l.setNumber === effSetNumber);
+  const effIsUnilateral = toggleUnilateral || halfDone;
+  const halveRest = effIsUnilateral && (s.halveRestByLog[logId ?? ''] ?? false);
+  const restOverride = s.restOverrideByLog[logId ?? ''] ?? null;
+  // Le repos qui s'applique est celui de la série qu'on vient de finir, pas de la suivante.
+  const restSetNumber = phase === 'rest' ? s.currentSetNumber : effSetNumber;
+  autoStartRef.current = {
+    setNumber: effSetNumber,
+    side: effCurrentSide,
+    execSeconds: getTargetExecutionSeconds(effSetNumber),
+  };
+
+  const refresh = () => setTick((t) => t + 1);
+
+  // Repos en cours : quand le choix de repos change, le compte à rebours s'ajuste
+  // (même timerStartedAt). Hors repos, rien à recalculer.
+  const retargetRunningRest = (override: number | null, halve: boolean) => {
+    if (!isActive || getActiveSession().timerPhase !== 'rest') return {};
+    return {
+      timerTargetSeconds: getEffectiveRest({
+        override,
+        target: getTargetRestSeconds(restSetNumber),
+        halve,
+      }),
+      restForExerciseName: enriched?.exercise.name ?? null,
+    };
+  };
+
   // ─── Actions timer ────────────────────────────────────────────────────────
 
   const handleCommencer = () => {
-    const s = getActiveSession();
-    const wasActive = s.activeExerciseLogId === logId;
-    const unilateral = wasActive ? s.isUnilateral : localIsUnilateral;
-    const side = unilateral ? (wasActive ? (s.currentSide ?? 'L') : (localCurrentSide ?? 'L')) : null;
-    const setNumber = wasActive ? s.currentSetNumber : localNextSetNumber;
-
     setActiveSession({
       activeExerciseLogId: logId,
       timerPhase: 'execution',
       timerStartedAt: Date.now(),
-      timerTargetSeconds: getTargetExecutionSeconds(setNumber),
-      isUnilateral: unilateral,
-      currentSide: side,
-      currentSetNumber: setNumber,
+      timerTargetSeconds: getTargetExecutionSeconds(effSetNumber),
+      isUnilateral: effIsUnilateral,
+      currentSide: effCurrentSide,
+      currentSetNumber: effSetNumber,
     });
     autoFiredRef.current = false;
+    refresh();
   };
 
   const handleTerminer = () => {
-    const s = getActiveSession();
-    const executionSeconds = Math.floor((Date.now() - s.timerStartedAt) / 1000);
-    const targetRest = getTargetRestSeconds(s.currentSetNumber);
-    const lastPreset = s.lastRestPresets[logId] ?? null;
-    const restTarget = targetRest ?? lastPreset;
+    const st = getActiveSession();
+    const executionSeconds = Math.floor((Date.now() - st.timerStartedAt) / 1000);
 
     setActiveSession({
       timerPhase: 'rest',
       timerStartedAt: Date.now(),
-      timerTargetSeconds: restTarget,
+      timerTargetSeconds: getEffectiveRest({
+        override: restOverride,
+        target: getTargetRestSeconds(effSetNumber),
+        halve: halveRest,
+      }),
       lastExecutionSeconds: executionSeconds,
       restForExerciseName: enriched?.exercise.name ?? null,
+      // La série qu'on termine : c'est son repos qui court, jusqu'au prochain « Commencer »
+      isUnilateral: effIsUnilateral,
+      currentSide: effCurrentSide,
+      currentSetNumber: effSetNumber,
     });
     autoFiredRef.current = false;
     setModalVisible(true);
   };
 
+  // Le repos choisi devient celui de l'exercice pour la suite de la séance (store éphémère).
   const handleSelectPreset = (seconds: number) => {
     if (!logId) return;
-    const s = getActiveSession();
-    const wasActive = s.activeExerciseLogId === logId;
-    const unilateral = wasActive ? s.isUnilateral : localIsUnilateral;
-    const side = unilateral ? (wasActive ? (s.currentSide ?? 'L') : (localCurrentSide ?? 'L')) : null;
-    const setNumber = wasActive ? s.currentSetNumber : localNextSetNumber;
-
+    const st = getActiveSession();
     setActiveSession({
-      activeExerciseLogId: logId,
-      timerPhase: 'rest',
-      timerStartedAt: wasActive && s.timerPhase === 'rest' ? s.timerStartedAt : Date.now(),
-      timerTargetSeconds: seconds,
-      lastRestPresets: { ...s.lastRestPresets, [logId]: seconds },
-      restForExerciseName: enriched?.exercise.name ?? null,
-      isUnilateral: unilateral,
-      currentSide: side,
-      currentSetNumber: setNumber,
+      restOverrideByLog: { ...st.restOverrideByLog, [logId]: seconds },
+      ...retargetRunningRest(seconds, halveRest),
     });
     autoFiredRef.current = false;
+    refresh();
+  };
+
+  // Chip « Prévu » : on retombe sur l'objectif du plan (qui peut varier d'une série à l'autre).
+  const handleSelectPlanned = () => {
+    if (!logId) return;
+    const st = getActiveSession();
+    const next = { ...st.restOverrideByLog };
+    delete next[logId];
+    setActiveSession({ restOverrideByLog: next, ...retargetRunningRest(null, halveRest) });
+    autoFiredRef.current = false;
+    refresh();
+  };
+
+  const handleToggleUnilateral = (v: boolean) => {
+    if (isActive) setActiveSession({ isUnilateral: v });
+    else setLocalIsUnilateral(v);
+    // Le ÷ 2 ne s'applique qu'en unilatéral : le décompte en cours doit suivre.
+    const halve = v && (getActiveSession().halveRestByLog[logId ?? ''] ?? false);
+    setActiveSession(retargetRunningRest(restOverride, halve));
+    refresh();
+  };
+
+  const handleSelectStartSide = (side: 'L' | 'R') => {
+    if (!logId) return;
+    const st = getActiveSession();
+    setActiveSession({ startSideByLog: { ...st.startSideByLog, [logId]: side } });
+    refresh();
+  };
+
+  const handleToggleHalveRest = (v: boolean) => {
+    if (!logId) return;
+    const st = getActiveSession();
+    setActiveSession({
+      halveRestByLog: { ...st.halveRestByLog, [logId]: v },
+      ...retargetRunningRest(restOverride, v && effIsUnilateral),
+    });
+    refresh();
   };
 
   const handleSavePerf = async (data: SetLogData) => {
     if (!logId) return;
-    const s = getActiveSession();
+    const st = getActiveSession();
 
     await saveSetLog(
       logId,
-      { ...data, executionSeconds: s.lastExecutionSeconds },
-      s.currentSetNumber,
-      s.currentSide ?? undefined
+      { ...data, executionSeconds: st.lastExecutionSeconds },
+      effSetNumber,
+      effCurrentSide ?? undefined
     );
 
     setModalVisible(false);
     setEditingSetLog(null);
 
-    if (s.isUnilateral) {
-      if (s.currentSide === 'L') {
-        // L sauvé → changer le côté en R, continuer le repos
-        setActiveSession({
-          timerPhase: 'rest',
-          timerStartedAt: s.timerStartedAt,
-          timerTargetSeconds: s.timerTargetSeconds,
-          currentSide: 'R',
-          restForExerciseName: enriched?.exercise.name ?? null,
-        });
-        autoFiredRef.current = false;
-      } else {
-        // R sauvé → nouvelle série, retour à L, démarrer un nouveau repos
-        const newRestTarget = getTargetRestSeconds(s.currentSetNumber) ?? (s.lastRestPresets[logId] ?? null);
-        setActiveSession({
-          timerPhase: 'rest',
-          timerStartedAt: Date.now(),
-          timerTargetSeconds: newRestTarget,
-          currentSetNumber: s.currentSetNumber + 1,
-          currentSide: 'L',
-          lastExecutionSeconds: null,
-          restForExerciseName: enriched?.exercise.name ?? null,
-        });
-        autoFiredRef.current = false;
-      }
-    } else {
-      // Bilatéral : incrémenter, continuer le repos déjà en cours
-      setActiveSession({
-        timerPhase: 'rest',
-        timerStartedAt: s.timerStartedAt,
-        timerTargetSeconds: s.timerTargetSeconds,
-        currentSetNumber: s.currentSetNumber + 1,
-        lastExecutionSeconds: null,
-        restForExerciseName: enriched?.exercise.name ?? null,
-      });
-      autoFiredRef.current = false;
-    }
+    // Le repos déjà lancé par « Terminer série » continue ; la série/le côté suivants
+    // sont recalculés par load() depuis les séries enregistrées.
+    setActiveSession({ lastExecutionSeconds: null, restForExerciseName: enriched?.exercise.name ?? null });
+    autoFiredRef.current = false;
 
     load();
   };
@@ -335,45 +399,22 @@ export default function ExerciceDetailLiveScreen() {
   };
 
   // Enregistrement d'une série encodée à la main, hors repos en cours : pas de chrono
-  // (executionSeconds reste null), et on avance le compteur série/côté.
+  // (executionSeconds reste null). La suite est recalculée par load().
   const handleSaveManual = async (data: SetLogData) => {
     if (!logId) return;
-    const s = getActiveSession();
-    const active = s.activeExerciseLogId === logId;
-    const unilateral = active ? s.isUnilateral : localIsUnilateral;
-    const side = unilateral ? (active ? (s.currentSide ?? 'L') : (localCurrentSide ?? 'L')) : null;
-    const setNumber = active ? s.currentSetNumber : localNextSetNumber;
-
-    await saveSetLog(logId, { ...data, executionSeconds: null }, setNumber, side ?? undefined);
+    await saveSetLog(
+      logId,
+      { ...data, executionSeconds: null },
+      effSetNumber,
+      effCurrentSide ?? undefined
+    );
     setModalVisible(false);
-
-    const nextSide = unilateral ? (side === 'L' ? 'R' : 'L') : null;
-    const nextSet = unilateral && side === 'L' ? setNumber : setNumber + 1;
-    if (active) {
-      setActiveSession({ currentSetNumber: nextSet, currentSide: nextSide });
-    } else {
-      setLocalNextSetNumber(nextSet);
-      setLocalCurrentSide(nextSide);
-    }
     load();
   };
 
   const handleEditSetLog = (sl: SetLogRow) => {
     setEditingSetLog(sl);
     setModalVisible(true);
-  };
-
-  // Menu « Modifier » d'une série : en unilatéral (G et D enregistrés), on choisit le côté.
-  const handleEditRow = (left: SetLogRow, right: SetLogRow | undefined) => {
-    if (!right) {
-      handleEditSetLog(left);
-      return;
-    }
-    Alert.alert(`Modifier la série #${left.setNumber ?? '?'}`, undefined, [
-      { text: 'Gauche', onPress: () => handleEditSetLog(left) },
-      { text: 'Droite', onPress: () => handleEditSetLog(right) },
-      { text: 'Annuler', style: 'cancel' },
-    ]);
   };
 
   const handleSaveEdit = async (data: SetLogData) => {
@@ -391,49 +432,24 @@ export default function ExerciceDetailLiveScreen() {
     load();
   };
 
-  const handleDeleteSetLog = (sl: SetLogRow) => {
-    Alert.alert(
-      'Supprimer la série',
-      `Supprimer la série #${sl.setNumber ?? '?'} ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            // Pour unilatéral : supprimer aussi le partenaire L/R
-            if (sl.side && enriched) {
-              const partnerSide = sl.side === 'L' ? 'R' : 'L';
-              const partner = enriched.setLogs.find(
-                (x) => x.setNumber === sl.setNumber && x.side === partnerSide
-              );
-              if (partner) await deleteSetLog(partner.id);
-            }
-            await deleteSetLog(sl.id);
-            const s = getActiveSession();
-            if (s.activeExerciseLogId === logId) {
-              setActiveSession({ currentSetNumber: Math.max(1, s.currentSetNumber - 1) });
-            } else {
-              setLocalNextSetNumber((n) => Math.max(1, n - 1));
-            }
-            load();
-          },
+  // Supprime la série entière (G+D en unilatéral) puis comble le trou : sans renumérotation,
+  // la prochaine série enregistrée porterait un numéro déjà utilisé.
+  const handleDeleteSetLog = (group: SetLogRow[], setNumber: number) => {
+    Alert.alert('Supprimer la série', `Supprimer la série #${setNumber} ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          for (const row of group) await deleteSetLog(row.id);
+          await renumberSetsAfterDelete(logId!, setNumber);
+          load();
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // ─── Rendu ────────────────────────────────────────────────────────────────
-
-  const s = getActiveSession();
-  const isActive = s.activeExerciseLogId === logId;
-  const phase = isActive ? s.timerPhase : 'idle';
-  const effIsUnilateral = isActive ? s.isUnilateral : localIsUnilateral;
-  const effCurrentSide = effIsUnilateral ? (isActive ? s.currentSide : localCurrentSide) : null;
-  const effSetNumber = isActive ? s.currentSetNumber : localNextSetNumber;
-  const targetRestSec = getTargetRestSeconds(effSetNumber);
-  const hasRestTarget = targetRestSec != null;
-  const lastUsedPreset = s.lastRestPresets[logId] ?? null;
 
   if (!enriched) {
     return (
@@ -447,8 +463,8 @@ export default function ExerciceDetailLiveScreen() {
   const mesoSet = getCurrentMesoSet(effSetNumber);
   const histSet = isEditing
     ? null
-    : getPrefillFromCurrentSession(effSetNumber, effCurrentSide, effIsUnilateral) ??
-      getPrefillFromHistory(effSetNumber, effCurrentSide, effIsUnilateral);
+    : getPrefillFromCurrentSession(effSetNumber, effCurrentSide, effCurrentSide != null) ??
+      getPrefillFromHistory(effSetNumber, effCurrentSide, effCurrentSide != null);
   const prefillWeightKg =
     histSet?.weight ??
     mesoSet?.targetWeightMin ?? mesoSet?.targetWeightMax ??
@@ -561,31 +577,13 @@ export default function ExerciceDetailLiveScreen() {
         {/* ── Objectifs ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Objectifs</Text>
-          {enriched.mesoSets.length > 0 ? (
-            enriched.mesoSets.map((ms) => (
-              <View key={ms.id} style={styles.objectifRow}>
-                <Text style={styles.setNum}>Série {ms.setNumber}</Text>
-                <Text style={styles.objectifText}>
-                  {formatTargets({
-                    targetRepsMin: ms.targetRepsMin,
-                    targetRepsMax: ms.targetRepsMax,
-                    targetWeightMin: ms.targetWeightMin,
-                    targetWeightMax: ms.targetWeightMax,
-                    targetRirMin: ms.targetRirMin,
-                    targetRirMax: ms.targetRirMax,
-                    targetRestSeconds: ms.targetRestSeconds,
-                    targetDurationSeconds: ms.targetDurationSeconds,
-                  }, { weightUnit })}
-                </Text>
-              </View>
-            ))
-          ) : enriched.programExercise ? (
-            <Text style={styles.objectifText}>
-              {formatTargets(enriched.programExercise, { weightUnit })}
-            </Text>
-          ) : (
-            <Text style={styles.emptyText}>Aucun objectif</Text>
-          )}
+          <ObjectivesList
+            mesoSets={enriched.mesoSets}
+            programExercise={enriched.programExercise}
+            weightUnit={weightUnit}
+            sets={progress.sets}
+            plannedSetCount={plannedSetCount}
+          />
         </View>
 
         {/* ── Timer ── */}
@@ -593,27 +591,54 @@ export default function ExerciceDetailLiveScreen() {
           <View style={styles.timerHeader}>
             <Text style={styles.sectionTitle}>
               {phase === 'execution'
-                ? `Série ${s.currentSetNumber}${sideLabel(s.currentSide)} en cours`
+                ? `Série ${effSetNumber}${sideLabel(effCurrentSide)} en cours`
                 : phase === 'rest'
-                ? `Repos · série ${s.currentSetNumber}${sideLabel(s.currentSide)} à venir`
-                : `Série ${effSetNumber}${sideLabel(effIsUnilateral ? effCurrentSide : null)}`}
+                ? `Repos · série ${effSetNumber}${sideLabel(effCurrentSide)} à venir`
+                : `Série ${effSetNumber}${sideLabel(effCurrentSide)}`}
             </Text>
             <View style={styles.unilateralRow}>
               <Text style={styles.smallLabel}>Unilatéral</Text>
               <Switch
                 value={effIsUnilateral}
-                onValueChange={(v) => {
-                  if (isActive) {
-                    setActiveSession({ isUnilateral: v, currentSide: v ? 'L' : null });
-                  } else {
-                    setLocalIsUnilateral(v);
-                    setLocalCurrentSide(v ? 'L' : null);
-                  }
-                }}
+                disabled={halfDone}
+                onValueChange={handleToggleUnilateral}
                 trackColor={{ true: '#007AFF' }}
               />
             </View>
           </View>
+
+          {/* Côté de départ + repos ÷ 2 : seulement en unilatéral */}
+          {effIsUnilateral && (
+            <View style={styles.halveRow}>
+              <Text style={styles.smallLabel}>Commencer par</Text>
+              {(['L', 'R'] as const).map((side) => {
+                // Série à moitié faite : le côté de départ est celui déjà enregistré
+                const active = halfDone ? effCurrentSide !== side : firstSide === side;
+                return (
+                  <Pressable
+                    key={side}
+                    disabled={halfDone}
+                    style={[styles.modeChip, active && styles.modeChipActive, halfDone && styles.chipDisabled]}
+                    onPress={() => handleSelectStartSide(side)}
+                  >
+                    <Text style={[styles.modeText, active && styles.modeTextActive]}>
+                      {side === 'L' ? 'Gauche' : 'Droite'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+          {effIsUnilateral && (
+            <View style={styles.halveRow}>
+              <Text style={styles.smallLabel}>Repos ÷ 2 (par côté)</Text>
+              <Switch
+                value={halveRest}
+                onValueChange={handleToggleHalveRest}
+                trackColor={{ true: '#007AFF' }}
+              />
+            </View>
+          )}
 
           {/* Chrono (visible en exécution et en repos) */}
           {phase !== 'idle' && (
@@ -652,12 +677,14 @@ export default function ExerciceDetailLiveScreen() {
             </Pressable>
           </View>
 
-          {/* Preset repos (visible si pas de targetRestSeconds, en repos ou idle) */}
-          {!hasRestTarget && (phase === 'rest' || phase === 'idle') && (
+          {/* Repos : toujours modifiable ; l'objectif du plan = chip « Prévu » présélectionnée */}
+          {(phase === 'rest' || phase === 'idle') && (
             <RestPresetPicker
               presets={presets}
-              lastUsedSeconds={lastUsedPreset}
+              overrideSeconds={restOverride}
+              plannedSeconds={getTargetRestSeconds(restSetNumber)}
               onSelect={handleSelectPreset}
+              onSelectPlanned={handleSelectPlanned}
               onEditPresets={() => router.push('/seance/presets-repos' as any)}
             />
           )}
@@ -667,7 +694,7 @@ export default function ExerciceDetailLiveScreen() {
             {phase === 'idle' && (
               <Pressable style={styles.primaryBtn} onPress={handleCommencer}>
                 <Text style={styles.primaryBtnText}>
-                  Commencer série{sideLabel(effIsUnilateral ? effCurrentSide : null)}
+                  Commencer série{sideLabel(effCurrentSide)}
                 </Text>
               </Pressable>
             )}
@@ -690,7 +717,7 @@ export default function ExerciceDetailLiveScreen() {
                   onPress={handleCommencer}
                 >
                   <Text style={styles.primaryBtnText}>
-                    Commencer{sideLabel(s.isUnilateral ? s.currentSide : null)} maintenant
+                    Commencer{sideLabel(effCurrentSide)} maintenant
                   </Text>
                 </Pressable>
                 <Pressable
@@ -711,47 +738,13 @@ export default function ExerciceDetailLiveScreen() {
         {enriched.setLogs.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Séries de cette séance</Text>
-            {enriched.setLogs.map((sl, i) => {
-              if (sl.side === 'R') return null; // affiché avec le L
-              const partner = enriched.setLogs.find(
-                (x) => x.setNumber === sl.setNumber && x.side === 'R'
-              );
-              const setNum = sl.setNumber ?? i + 1;
-              return (
-                <Pressable
-                  key={sl.id}
-                  style={styles.setRow}
-                  onPress={() =>
-                    Alert.alert(
-                      `Série #${setNum}`,
-                      undefined,
-                      [
-                        { text: 'Modifier', onPress: () => handleEditRow(sl, partner) },
-                        { text: 'Supprimer', style: 'destructive', onPress: () => handleDeleteSetLog(sl) },
-                        { text: 'Annuler', style: 'cancel' },
-                      ]
-                    )
-                  }
-                >
-                  <Text style={styles.setNum}>#{setNum}</Text>
-                  <View style={styles.setDetails}>
-                    <Text style={styles.setLine}>
-                      {sl.side ? 'G : ' : ''}{formatSetLine(sl, weightUnit)}
-                    </Text>
-                    <SetNote note={sl.note} />
-                    {partner && (
-                      <>
-                        <Text style={[styles.setLine, styles.setLineSub]}>
-                          D : {formatSetLine(partner, weightUnit)}
-                        </Text>
-                        <SetNote note={partner.note} />
-                      </>
-                    )}
-                  </View>
-                  <Text style={styles.editHint}>⋮</Text>
-                </Pressable>
-              );
-            })}
+            <SetLogList
+              setLogs={enriched.setLogs}
+              weightUnit={weightUnit}
+              firstSide={firstSide}
+              onEdit={handleEditSetLog}
+              onDelete={handleDeleteSetLog}
+            />
           </View>
         )}
 
@@ -762,33 +755,7 @@ export default function ExerciceDetailLiveScreen() {
             {history.map((group) => (
               <View key={group.sessionId} style={styles.histGroup}>
                 <Text style={styles.histDate}>{formatDate(group.sessionDate)}</Text>
-                {group.sets
-                  .filter((sl) => sl.side !== 'R')
-                  .map((sl, i) => {
-                    const partner = group.sets.find(
-                      (x) => x.setNumber === sl.setNumber && x.side === 'R'
-                    );
-                    const setNum = sl.setNumber ?? i + 1;
-                    return (
-                      <View key={sl.id} style={styles.setRow}>
-                        <Text style={styles.setNum}>#{setNum}</Text>
-                        <View style={styles.setDetails}>
-                          <Text style={styles.setLine}>
-                            {sl.side ? 'G : ' : ''}{formatSetLine(sl, weightUnit)}
-                          </Text>
-                          <SetNote note={sl.note} />
-                          {partner && (
-                            <>
-                              <Text style={[styles.setLine, styles.setLineSub]}>
-                                D : {formatSetLine(partner, weightUnit)}
-                              </Text>
-                              <SetNote note={partner.note} />
-                            </>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })}
+                <SetLogList setLogs={group.sets} weightUnit={weightUnit} firstSide={firstSide} />
               </View>
             ))}
           </View>
@@ -816,15 +783,6 @@ export default function ExerciceDetailLiveScreen() {
 }
 
 // ─── Helpers affichage ────────────────────────────────────────────────────────
-
-function formatSetLine(sl: SetLogRow, unit: 'kg' | 'lb'): string {
-  const parts: string[] = [];
-  if (sl.weight != null) parts.push(formatWeight(sl.weight, unit));
-  if (sl.reps != null) parts.push(`× ${sl.reps} reps`);
-  if (sl.rir != null) parts.push(`RIR ${sl.rir}`);
-  if (sl.pdc) parts.push('PDC');
-  return parts.join(' · ') || '—';
-}
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -891,6 +849,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   unilateralRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chipDisabled: { opacity: 0.5 },
+  halveRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   smallLabel: { fontSize: 13, color: '#8E8E93' },
   modeRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   modeChip: {
