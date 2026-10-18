@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { ExerciseImageCarousel } from '../../../../../../src/components/ExerciseImageCarousel';
+import SetNote from '../../../../../../src/components/SetNote';
 import { consumePendingAlt } from '../../../../../../src/utils/altPickerStore';
 
 import { db } from '../../../../../../src/db';
@@ -417,10 +418,13 @@ export default function ProgramExerciceDetailScreen() {
               <View key={group.sessionId} style={styles.historyBlock}>
                 <Text style={styles.historyDate}>{formatDate(group.sessionDate)}</Text>
                 {group.sets.map((sl, i) => (
-                  <Text key={sl.id} style={styles.historySet}>
-                    Série {sl.setNumber ?? i + 1}
-                    {sideLabel(sl.side)} · {formatSetLine(sl, weightUnit)}
-                  </Text>
+                  <View key={sl.id}>
+                    <Text style={styles.historySet}>
+                      Série {sl.setNumber ?? i + 1}
+                      {sideLabel(sl.side)} · {formatSetLine(sl, weightUnit)}
+                    </Text>
+                    <SetNote note={sl.note} />
+                  </View>
                 ))}
               </View>
             ))

@@ -17,7 +17,7 @@ Application mobile (Android / iOS) de suivi d'entraînement en musculation, dév
 
 | Outil | Rôle |
 |---|---|
-| [Expo](https://expo.dev) (SDK 54) + React Native | Application mobile cross-platform |
+| [Expo](https://expo.dev) (SDK 57) + React Native | Application mobile cross-platform |
 | [expo-router](https://docs.expo.dev/router/introduction/) | Navigation par fichiers |
 | [expo-sqlite](https://docs.expo.dev/versions/latest/sdk/sqlite/) + [Drizzle ORM](https://orm.drizzle.team/) | Base de données locale, typée |
 | TypeScript | Typage statique sur tout le projet |

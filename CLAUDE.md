@@ -17,10 +17,10 @@ Si des cas d'école sont recontrés, explique les en détail.
 
 | Outil | Version |
 |---|---|
-| Expo SDK | ~54.0.0 |
-| React Native | 0.81.5 |
-| expo-router | ~6.0.24 |
-| expo-sqlite | ~16.0.10 |
+| Expo SDK | ~57.0.0 |
+| React Native | 0.86.3 |
+| expo-router | ~57.0.28 |
+| expo-sqlite | ~57.0.4 |
 | drizzle-orm | ^0.45.2 |
 | drizzle-kit | ^0.31.10 |
 
@@ -117,7 +117,7 @@ Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.cr
 
 **Piège découvert avec la migration 0014 (plusieurs `ALTER TABLE` dans un même fichier) :** le migrateur Expo/Drizzle (`node_modules/drizzle-orm/expo-sqlite/migrator.js`) ne découpe un fichier `.sql` en instructions séparées que sur le marqueur littéral `--> statement-breakpoint`. Sans ce marqueur, tout le fichier est envoyé en un seul bloc à `NativeDatabase.prepareSync`, qui ne compile et n'exécute **que la toute première instruction** — les suivantes sont silencieusement ignorées, sans erreur, et la migration est quand même marquée comme appliquée. Toujours séparer chaque instruction SQL par une ligne `--> statement-breakpoint` dès qu'un fichier de migration en contient plus d'une (voir `0010_workout_session_live.sql` ou `0011_meso_calendar_anchor.sql` pour l'exemple). Un fichier à une seule instruction n'en a pas besoin.
 
-**Prochain `when` disponible** : > `1782700006000` (dernière migration : 0016).
+**Prochain `when` disponible** : > `1782700007000` (dernière migration : 0017).
 
 **Diagramme ER** : [docs/schema-diagramme.md](docs/schema-diagramme.md) (Mermaid, en code — pas besoin de le compiler). **Toute session qui modifie le schéma** (nouvelle colonne, nouvelle table, migration) doit le régénérer avant de terminer, à partir de `src/db/schema.ts` — comparer champ par champ avec la version existante plutôt que de tout réécrire à l'aveugle.
 
@@ -173,6 +173,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0014 | update_settings | `user_settings.update_check_enabled` (amélioration 09) |
 | 0015 | update_settings_fix | `user_settings.last_update_check_at` + `skipped_version` — suite de la 0014, qui n'ajoutait que la première colonne (piège multi-instructions, voir ci-dessus) |
 | 0016 | meso_exercise_note | `meso_exercises.note` (amélioration 06) |
+| 0017 | set_log_note | `set_logs.note` (amélioration 12 : note par série) |
 
 ---
 

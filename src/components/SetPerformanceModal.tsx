@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -31,7 +32,17 @@ type Props = {
   prefillRir?: number | null;
   prefillPartialReps?: number | null;
   prefillPdc?: boolean;
+  // Remplie uniquement en édition : une nouvelle série ne reprend pas la note de la précédente
+  prefillNote?: string | null;
 };
+
+// Entier saisi → nombre, champ vide / illisible → null.
+// Piège : `parseInt(s) || null` transformerait un 0 (RIR 0, 0 rep partielle) en null,
+// car 0 est « falsy » en JavaScript. On teste donc NaN explicitement.
+function parseIntOrNull(s: string): number | null {
+  const n = parseInt(s, 10);
+  return Number.isNaN(n) ? null : n;
+}
 
 export default function SetPerformanceModal({
   visible,
@@ -46,6 +57,7 @@ export default function SetPerformanceModal({
   prefillRir,
   prefillPartialReps,
   prefillPdc,
+  prefillNote,
 }: Props) {
   const [unit, setUnit] = useState<'kg' | 'lb'>(initialUnit);
   const [weight, setWeight] = useState(
@@ -57,7 +69,7 @@ export default function SetPerformanceModal({
   const [rir, setRir] = useState(prefillRir != null ? String(prefillRir) : '');
   const [partialReps, setPartialReps] = useState(prefillPartialReps != null ? String(prefillPartialReps) : '');
   const [pdc, setPdc] = useState(prefillPdc ?? false);
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(prefillNote ?? '');
 
   const toggleUnit = async (newUnit: 'kg' | 'lb') => {
     if (newUnit === unit) return;
@@ -77,13 +89,14 @@ export default function SetPerformanceModal({
     const weightKg = isNaN(weightRaw) ? null : (unit === 'lb' ? lbToKg(weightRaw) : weightRaw);
     const data: SetLogData = {
       weight: weightKg,
-      reps: parseInt(reps, 10) || null,
-      rir: parseInt(rir, 10) || null,
-      partialReps: parseInt(partialReps, 10) || null,
+      reps: parseIntOrNull(reps),
+      rir: parseIntOrNull(rir),
+      partialReps: parseIntOrNull(partialReps),
       pdc,
       durationSeconds: null,
       restSeconds: null,
       executionSeconds: null,
+      note: note.trim() || null,
     };
     onSave(data);
   };
@@ -92,7 +105,15 @@ export default function SetPerformanceModal({
   const title = `Série ${setNumber}${sideLabel}`;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+      // Android donne le focus au 1er champ à l'ouverture d'un Modal et ouvre le clavier :
+      // on le referme, il se rouvrira normalement au tap sur un champ.
+      onShow={() => Keyboard.dismiss()}
+    >
       <Pressable style={styles.backdrop} onPress={onClose} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

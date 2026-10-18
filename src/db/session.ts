@@ -29,6 +29,7 @@ export type SetLogData = {
   durationSeconds: number | null;
   restSeconds: number | null;
   executionSeconds: number | null;
+  note: string | null;
 };
 
 export type PerfGroup = {
@@ -255,6 +256,7 @@ export async function saveSetLog(
     durationSeconds: data.durationSeconds,
     restSeconds: data.restSeconds,
     executionSeconds: data.executionSeconds,
+    note: data.note,
     setNumber,
     side: side ?? null,
   });
@@ -273,6 +275,7 @@ export async function updateSetLog(id: string, data: SetLogData): Promise<void> 
     durationSeconds: data.durationSeconds,
     restSeconds: data.restSeconds,
     executionSeconds: data.executionSeconds,
+    note: data.note,
   }).where(eq(setLogs.id, id));
 }
 

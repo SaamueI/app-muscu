@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ExercisePicker from '../../src/components/ExercisePicker';
 import { ExerciseImageCarousel } from '../../src/components/ExerciseImageCarousel';
+import SetNote from '../../src/components/SetNote';
 import { db } from '../../src/db';
 import {
   deleteExerciseCascade,
@@ -220,10 +221,13 @@ export default function ExerciceDetailScreen() {
             <View key={group.sessionId} style={styles.histGroup}>
               <Text style={styles.histDate}>{formatDate(group.sessionDate)}</Text>
               {group.sets.map((sl, i) => (
-                <Text key={sl.id} style={styles.historySet}>
-                  Série {sl.setNumber ?? i + 1}
-                  {sideLabel(sl.side)} · {formatSetLine(sl, weightUnit)}
-                </Text>
+                <View key={sl.id}>
+                  <Text style={styles.historySet}>
+                    Série {sl.setNumber ?? i + 1}
+                    {sideLabel(sl.side)} · {formatSetLine(sl, weightUnit)}
+                  </Text>
+                  <SetNote note={sl.note} />
+                </View>
               ))}
             </View>
           ))
