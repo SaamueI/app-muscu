@@ -1,5 +1,5 @@
 // Couche fichiers (device) : écriture dans le cache, partage, et sélection.
-// Nouvelle API expo-file-system SDK 54 (classes File / Paths).
+// Nouvelle API expo-file-system SDK 54+ (classes File / Paths).
 
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
