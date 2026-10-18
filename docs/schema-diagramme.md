@@ -111,6 +111,7 @@ erDiagram
         int execution_seconds
         int set_number
         text side
+        text note
     }
 
     MESOCYCLES {
