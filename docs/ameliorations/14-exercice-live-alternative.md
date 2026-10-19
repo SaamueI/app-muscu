@@ -1,6 +1,6 @@
 # 14 — Exercice live : basculer sur un exercice alternatif, changer de variante
 
-> **Statut : ✅ décisions actées (2026-10-18)** — prêt à implémenter (après le plan 13, dont il réutilise `computeProgress`). Deux volets : changer d'**exercice** (§ Effet) et changer de **variante** de l'exercice en cours (§ Changer de variante, ajouté le 2026-10-18). La variante *des alternatives dans le plan* est **abandonnée** (voir fin du document).
+> **Statut : ✅ implémenté et validé (2026-10-19)** — typecheck 0 erreur, `npm run test:swap` vert. Voir § Notes d'implémentation en fin de document. Décisions actées le 2026-10-18 (plan 13 d'abord, dont il réutilise `computeProgress`). Deux volets : changer d'**exercice** (§ Effet) et changer de **variante** de l'exercice en cours (§ Changer de variante, ajouté le 2026-10-18). La variante *des alternatives dans le plan* est **abandonnée** (voir fin du document).
 
 ## Problème
 
@@ -135,3 +135,16 @@ Une seule instruction, nullable. `schema.ts` (`selectedVariation: text('selected
 ## Abandonné — variante des alternatives dans le plan
 
 Évalué le 2026-10-08 : stocker une variante par alternative dans le méso/programme demandait soit une nouvelle table (trop lourd : 12 fichiers à réécrire), soit une colonne JSON parallèle (≈ 15 fichiers, ripple export/import). **Abandonné le 2026-10-18** au profit du changement de variante en live ci-dessus : après avoir basculé sur une alternative, on lui choisit sa variante dans la séance.
+
+---
+
+## Notes d'implémentation
+
+- **Migration 0019** : `exercise_logs.selected_variation`. Convention : `null` = non renseignée (log antérieur à la migration), **`''` = « Aucune » choisie explicitement**. Sans ce sentinel, choisir « Aucune » sur un log dont le plan a une variante la ferait réapparaître par le repli (écart assumé avec le plan, qui disait « remise à `null` » au changement d'exercice : on écrit `''`).
+- **Helpers purs** `src/utils/exerciseSwap.ts` (`getEffectiveVariation`, `getChainInfo`/`getChainInfoFor`) + `scripts/testExerciseSwap.ts` (`npm run test:swap`). La chaîne donne `startSetNumber` (plus haute série *complète* de la chaîne + 1) **et** la liste des séries déjà faites avec l'exercice qui les a faites (alternative d'alternative : « fait — Développé couché » puis « fait — Haltères »).
+- **DB** (`src/db/session.ts`) : `swapExerciseLog`, `setExerciseLogVariation`, `addVariationToExercise` ; `startWorkoutSession` recopie la variante du plan (méso et programme) ; `getSessionLive` expose `plannedExercise` (exercice prévu si différent de celui fait → mention « remplace … ») ; `PerfGroup.variation`.
+- **Store** : `moveActiveExerciseLog` (`activeSessionStore.ts`) déplace l'exercice actif et ses réglages éphémères (repos choisi, ÷ 2, côté de départ) vers le nouveau log, et met à jour `restForExerciseName`.
+- **Écran live** (révisé après essai) : la variante suit le nom, en plus petit : « Barbell Squat - pied largeur d'épaules ✎ » (tap → `src/components/live/VariationPickerModal.tsx`, avec « + Nouvelle variante » qui ajoute aussi la valeur à la fiche catalogue) ; « remplace … » en dessous. Un bloc **« Remplacer l'exercice »** (entre « Infos exercice » et « Objectifs ») porte les chips : alternatives du plan, exercice prévu « (prévu) » pour revenir en arrière (l'exercice en cours est exclu) et « Autre… » (Modal `ExercisePicker`). Une chip d'alternative → alerte *Faire cet exercice / Voir la fiche / Annuler*. Le bloc « Infos exercice » ne contient plus ni variante ni alternatives.
+- **Objectifs / séries après un remplacement** (révisé après essai) : `ObjectivesList` reçoit `previousSets` ; les séries faites avec l'exercice remplacé gardent leurs objectifs (reps, RIR…) en vert avec ✓, **sans** mention « fait — », le nom de l'exercice fait en petit dessous ; ligne tronquée sur une ligne, un tap la déplie. « Séries de cette séance » liste aussi les séries des exercices remplacés (`ChainInfo.previousLogs`), regroupées sous leur nom, en lecture seule (modification via Détails de la séance).
+- **Affichage** : variante effective et « remplace … » sur les cartes de l'écran séance, Détails, Modifier ; variante à côté de la date dans l'historique (écran live, fiche exercice, écran exercice de programme). Écran Modifier : l'ajout de série d'un log qui en remplace un reprend à `startSetNumber`.
+- **Pas fait / à surveiller** : le préremplissage « série précédente de la séance » (`getPrefillFromCurrentSession`) ne regarde que le log courant, donc la première série d'une alternative ne reprend pas la série 2 de l'original (retombe sur l'historique puis le plan). Le libellé « n/N séries » de la carte compte les lignes du log courant seulement.

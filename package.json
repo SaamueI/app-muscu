@@ -51,6 +51,7 @@
     "test:mojibake": "tsx scripts/testMojibake.ts",
     "test:match": "tsx scripts/testExerciseMatch.ts",
     "test:progress": "tsx scripts/testExerciseProgress.ts",
+    "test:swap": "tsx scripts/testExerciseSwap.ts",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

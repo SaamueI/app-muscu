@@ -1,8 +1,10 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { mesoSets, programExercises } from '../../db/schema';
 import { formatTargets } from '../../utils/formatTargets';
 import type { SetState } from '../../utils/exerciseProgress';
+import type { PreviousSet } from '../../utils/exerciseSwap';
 
 type MesoSet = typeof mesoSets.$inferSelect;
 type ProgramExercise = typeof programExercises.$inferSelect;
@@ -15,6 +17,9 @@ type Props = {
   sets: SetState[];
   // Séries prévues : mesoSets.length, ou N d'un programme à N fixe, sinon 0 (objectif agrégé)
   plannedSetCount: number;
+  // Séries déjà faites par un exercice remplacé (amélioration 14) : lignes vertes
+  // (objectifs + nom de l'exercice fait) placées avant `sets`.
+  previousSets?: PreviousSet[];
 };
 
 // Liste « Objectifs » avec l'avancement de la séance (réutilisée par le superset) :
@@ -26,6 +31,7 @@ export default function ObjectivesList({
   weightUnit,
   sets,
   plannedSetCount,
+  previousSets = [],
 }: Props) {
   if (plannedSetCount === 0) {
     return programExercise ? (
@@ -35,12 +41,11 @@ export default function ObjectivesList({
     );
   }
 
-  return (
-    <View style={styles.list}>
-      {sets.map((s) => {
-        const planned = s.setNumber <= plannedSetCount;
-        const ms = mesoSets.find((m) => m.setNumber === s.setNumber) ?? mesoSets[s.setNumber - 1];
-        const text = !planned
+  // Texte des objectifs d'une série (plan méso, ou programme à N fixe)
+  const targetText = (setNumber: number): string => {
+    const planned = setNumber <= plannedSetCount;
+    const ms = mesoSets.find((m) => m.setNumber === setNumber) ?? mesoSets[setNumber - 1];
+    return !planned
           ? 'hors plan'
           : ms
           ? formatTargets(
@@ -63,6 +68,15 @@ export default function ObjectivesList({
               { weightUnit }
             )
           : '';
+  };
+
+  return (
+    <View style={styles.list}>
+      {previousSets.map((p) => (
+        <PreviousRow key={`prev-${p.setNumber}`} setNumber={p.setNumber} text={targetText(p.setNumber)} exerciseName={p.exerciseName} />
+      ))}
+      {sets.map((s) => {
+        const text = targetText(s.setNumber);
 
         // Unilatéral à moitié fait : « G ✓ » ou « D ✓ »
         const halfDone =
@@ -90,7 +104,26 @@ export default function ObjectivesList({
   );
 }
 
+// Série faite avec l'exercice remplacé : objectifs de la série + nom de l'exercice fait.
+// Une ligne par défaut (tronquée) ; un tap déplie le reste.
+function PreviousRow({ setNumber, text, exerciseName }: { setNumber: number; text: string; exerciseName: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = expanded ? undefined : 1;
+  return (
+    <Pressable style={[styles.row, styles.rowDone]} onPress={() => setExpanded((v) => !v)}>
+      <Text style={styles.setNum}>Série {setNumber}</Text>
+      <View style={styles.prevBody}>
+        <Text style={styles.text} numberOfLines={lines}>{text}</Text>
+        <Text style={styles.prevName} numberOfLines={lines}>{exerciseName}</Text>
+      </View>
+      <Text style={styles.check}>✓</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  prevBody: { flex: 1 },
+  prevName: { fontSize: 12, color: '#8E8E93', fontStyle: 'italic' },
   list: { gap: 6 },
   row: {
     flexDirection: 'row',

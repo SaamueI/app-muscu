@@ -416,7 +416,10 @@ export default function ProgramExerciceDetailScreen() {
           ) : (
             history.map((group) => (
               <View key={group.sessionId} style={styles.historyBlock}>
-                <Text style={styles.historyDate}>{formatDate(group.sessionDate)}</Text>
+                <Text style={styles.historyDate}>
+                  {formatDate(group.sessionDate)}
+                  {group.variation ? ` · ${group.variation}` : ''}
+                </Text>
                 {group.sets.map((sl, i) => (
                   <View key={sl.id}>
                     <Text style={styles.historySet}>

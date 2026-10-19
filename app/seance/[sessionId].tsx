@@ -19,6 +19,7 @@ import {
   type ExerciseLogEnriched,
   type SessionLiveData,
 } from '../../src/db/session';
+import { getEffectiveVariation } from '../../src/utils/exerciseSwap';
 import { formatTargets } from '../../src/utils/formatTargets';
 import ExercisePicker from '../../src/components/ExercisePicker';
 import GlobalRestBanner from '../../src/components/GlobalRestBanner';
@@ -147,7 +148,11 @@ export default function LiveSessionScreen() {
         <View style={styles.cardMain}>
           <Text style={[styles.cardName, el.log.isDone && styles.cardNameDone]}>
             {el.exercise.name}
+            {getEffectiveVariation(el) ? ` · ${getEffectiveVariation(el)}` : ''}
           </Text>
+          {el.plannedExercise && (
+            <Text style={styles.cardReplaces}>remplace {el.plannedExercise.name}</Text>
+          )}
           {targetLabel(el) !== '' && (
             <Text style={styles.cardTarget}>{targetLabel(el)}</Text>
           )}
@@ -366,6 +371,11 @@ const styles = StyleSheet.create({
   },
   cardNameDone: {
     textDecorationLine: 'line-through',
+  },
+  cardReplaces: {
+    fontSize: 12,
+    color: '#8E8E93',
+    fontStyle: 'italic',
   },
   cardTarget: {
     fontSize: 13,
