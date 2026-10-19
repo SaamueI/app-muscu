@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,16 +13,19 @@ import {
   View,
 } from 'react-native';
 
+import ExercisePicker from '../../../src/components/ExercisePicker';
 import { ExerciseImageCarousel } from '../../../src/components/ExerciseImageCarousel';
 import GlobalRestBanner from '../../../src/components/GlobalRestBanner';
 import ObjectivesList from '../../../src/components/live/ObjectivesList';
 import SetLogList from '../../../src/components/live/SetLogList';
+import VariationPickerModal from '../../../src/components/live/VariationPickerModal';
 import RestPresetPicker from '../../../src/components/RestPresetPicker';
 import SetPerformanceModal from '../../../src/components/SetPerformanceModal';
 import TimerDisplay from '../../../src/components/TimerDisplay';
 import { db } from '../../../src/db';
 import { exerciseLogs, exercises, setLogs } from '../../../src/db/schema';
 import {
+  addVariationToExercise,
   deleteSetLog,
   getAlternativeExercises,
   getPreviousPerfs,
@@ -31,6 +35,8 @@ import {
   markExerciseDone,
   renumberSetsAfterDelete,
   saveSetLog,
+  setExerciseLogVariation,
+  swapExerciseLog,
   updateSetLog,
   type ExerciseLogEnriched,
   type PerfGroup,
@@ -39,6 +45,7 @@ import {
 import { getFirstSide } from '../../../src/db/settings';
 import {
   getActiveSession,
+  moveActiveExerciseLog,
   setActiveSession
 } from '../../../src/utils/activeSessionStore';
 import {
@@ -47,6 +54,7 @@ import {
   getEffectiveRest,
   isUnilateralHint,
 } from '../../../src/utils/exerciseProgress';
+import { getChainInfoFor, getEffectiveVariation, type ChainInfo } from '../../../src/utils/exerciseSwap';
 
 type SetLogRow = typeof setLogs.$inferSelect;
 
@@ -65,6 +73,14 @@ export default function ExerciceDetailLiveScreen() {
   const [, setTick] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSetLog, setEditingSetLog] = useState<SetLogRow | null>(null);
+  // Remplacement d'exercice / variante (amélioration 14)
+  const [chain, setChain] = useState<ChainInfo<ExerciseLogEnriched>>({
+    startSetNumber: 1,
+    previousSets: [],
+    previousLogs: [],
+  });
+  const [showSwapPicker, setShowSwapPicker] = useState(false);
+  const [showVariationPicker, setShowVariationPicker] = useState(false);
   const autoFiredRef = useRef(false);
   // Prochaine série à démarrer, lue par le timer auto (l'intervalle ne se recrée pas à
   // chaque rendu : il passe par cette ref pour avoir la valeur à jour).
@@ -97,6 +113,7 @@ export default function ExerciceDetailLiveScreen() {
     const liveData = await getSessionLive(logRow.log.workoutSessionId);
     const found = liveData?.exerciseLogs.find((el) => el.log.id === logId) ?? null;
     setEnriched(found);
+    setChain(getChainInfoFor(logId, liveData?.exerciseLogs ?? []));
 
     const altIds =
       (found?.mesoExercise?.alternativeExerciseIds as string[] | null) ??
@@ -121,8 +138,7 @@ export default function ExerciceDetailLiveScreen() {
     if (!hintAppliedRef.current) {
       hintAppliedRef.current = true;
       if (getActiveSession().activeExerciseLogId !== logId) {
-        const variation =
-          found?.mesoExercise?.selectedVariation ?? found?.programExercise?.selectedVariation ?? null;
+        const variation = found ? getEffectiveVariation(found) : null;
         setLocalIsUnilateral(
           isUnilateralHint({
             variation,
@@ -248,6 +264,7 @@ export default function ExerciceDetailLiveScreen() {
     plannedSetCount,
     isUnilateral: toggleUnilateral,
     firstSide,
+    startSetNumber: chain.startSetNumber,
   });
   const effSetNumber = progress.next.setNumber;
   const effCurrentSide = progress.next.side;
@@ -449,6 +466,53 @@ export default function ExerciceDetailLiveScreen() {
     ]);
   };
 
+  // ─── Remplacer l'exercice / changer de variante (amélioration 14) ─────────
+
+  const doSwap = async (newExercise: typeof exercises.$inferSelect) => {
+    if (!logId || !enriched) return;
+    if (newExercise.id === enriched.exercise.id) {
+      Alert.alert('Déjà en cours', `${newExercise.name} est déjà l'exercice de cet écran.`);
+      return;
+    }
+    const newLogId = await swapExerciseLog(logId, newExercise.id);
+    // Si l'exercice était actif (chrono en cours), le chrono et ses réglages suivent le nouveau log
+    moveActiveExerciseLog(logId, newLogId, newExercise.name);
+    if (newLogId !== logId) {
+      router.replace(`/seance/exercice/${newLogId}` as any);
+    } else {
+      // Même log, autre exercice : le pré-réglage « Unilatéral » se recalcule pour le nouvel exercice
+      hintAppliedRef.current = false;
+      load();
+    }
+  };
+
+  const askSwapToAlternative = (alt: typeof exercises.$inferSelect) => {
+    Alert.alert(alt.name, undefined, [
+      { text: 'Faire cet exercice', onPress: () => doSwap(alt) },
+      { text: 'Voir la fiche', onPress: () => router.push(`/exercices/${alt.id}`) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  const handleSelectVariation = async (variation: string | null) => {
+    if (!logId) return;
+    await setExerciseLogVariation(logId, variation);
+    setShowVariationPicker(false);
+    // Une variante « unilatéral » pré-règle le toggle ; une autre ne le décoche pas
+    // (la déduction depuis l'historique peut le justifier). Jamais en cours de série.
+    if (!halfDone && isUnilateralHint({ variation, lastPerf: null })) {
+      if (isActive) setActiveSession({ isUnilateral: true });
+      else setLocalIsUnilateral(true);
+    }
+    load();
+  };
+
+  const handleCreateVariation = async (value: string) => {
+    if (!enriched) return;
+    await addVariationToExercise(enriched.exercise.id, value);
+    await handleSelectVariation(value.trim());
+  };
+
   // ─── Rendu ────────────────────────────────────────────────────────────────
 
   if (!enriched) {
@@ -491,6 +555,14 @@ export default function ExerciceDetailLiveScreen() {
   // le flux normal, qui laisse le repos courir ; sinon c'est un encodage manuel.
   const handleSaveNew = isActive && phase === 'rest' ? handleSavePerf : handleSaveManual;
 
+  const effectiveVariation = getEffectiveVariation(enriched);
+  // Exercices proposables dans le bloc Infos : alternatives du plan + exercice prévu (pour y
+  // revenir), sans l'exercice déjà en cours.
+  const swapChoices = [
+    ...(enriched.plannedExercise ? [enriched.plannedExercise] : []),
+    ...alternatives,
+  ].filter((a, i, all) => a.id !== enriched.exercise.id && all.findIndex((b) => b.id === a.id) === i);
+
   const sideLabel = (side: 'L' | 'R' | null) =>
     side === 'L' ? ' (Gauche)' : side === 'R' ? ' (Droite)' : '';
 
@@ -501,7 +573,15 @@ export default function ExerciceDetailLiveScreen() {
 
         {/* ── Nom de l'exercice ── */}
         <View style={styles.exerciseNameRow}>
-          <Text style={styles.exerciseName}>{enriched.exercise.name}</Text>
+          <Text style={styles.exerciseName}>
+            {enriched.exercise.name}
+            <Text style={styles.variationInline} onPress={() => setShowVariationPicker(true)}>
+              {` - ${effectiveVariation ?? 'aucune variante'} ✎`}
+            </Text>
+          </Text>
+          {enriched.plannedExercise && (
+            <Text style={styles.replacesText}>remplace {enriched.plannedExercise.name}</Text>
+          )}
         </View>
 
         {/* ── Infos exercice (repliée par défaut, lecture seule) ── */}
@@ -532,32 +612,6 @@ export default function ExerciceDetailLiveScreen() {
               </>
             ) : null}
 
-            {(enriched.mesoExercise || enriched.programExercise) && (
-              <>
-                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Variante</Text>
-                <Text style={styles.infoText}>
-                  {enriched.mesoExercise?.selectedVariation ?? enriched.programExercise?.selectedVariation ?? 'Aucune variante sélectionnée'}
-                </Text>
-
-                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Exercices alternatifs</Text>
-                {alternatives.length === 0 ? (
-                  <Text style={styles.infoText}>Aucun exercice alternatif</Text>
-                ) : (
-                  <View style={styles.altRow}>
-                    {alternatives.map((a) => (
-                      <Pressable
-                        key={a.id}
-                        style={styles.altChip}
-                        onPress={() => router.push(`/exercices/${a.id}`)}
-                      >
-                        <Text style={styles.altChipText}>{a.name}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </>
-            )}
-
             {enriched.mesoExercise?.note ? (
               <>
                 <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Note de la séance planifiée</Text>
@@ -574,6 +628,23 @@ export default function ExerciceDetailLiveScreen() {
           </View>
         )}
 
+        {/* ── Remplacer l'exercice ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Remplacer l'exercice</Text>
+          <View style={styles.altRow}>
+            {swapChoices.map((a) => (
+              <Pressable key={a.id} style={styles.altChip} onPress={() => askSwapToAlternative(a)}>
+                <Text style={styles.altChipText}>
+                  {a.id === enriched.plannedExercise?.id ? `${a.name} (prévu)` : a.name}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable style={[styles.altChip, styles.otherChip]} onPress={() => setShowSwapPicker(true)}>
+              <Text style={styles.altChipText}>Autre…</Text>
+            </Pressable>
+          </View>
+        </View>
+
         {/* ── Objectifs ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Objectifs</Text>
@@ -583,6 +654,7 @@ export default function ExerciceDetailLiveScreen() {
             weightUnit={weightUnit}
             sets={progress.sets}
             plannedSetCount={plannedSetCount}
+            previousSets={chain.previousSets}
           />
         </View>
 
@@ -735,9 +807,25 @@ export default function ExerciceDetailLiveScreen() {
         </View>
 
         {/* ── Séries en cours ── */}
-        {enriched.setLogs.length > 0 && (
+        {(enriched.setLogs.length > 0 || chain.previousLogs.some((p) => p.setLogs.length > 0)) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Séries de cette séance</Text>
+            {/* Exercices remplacés : lecture seule (à modifier depuis Détails de la séance) */}
+            {chain.previousLogs
+              .filter((p) => p.setLogs.length > 0)
+              .map((p) => (
+                <View key={p.log.id} style={styles.prevSets}>
+                  <Text style={styles.prevSetsName}>{p.exercise.name}</Text>
+                  <SetLogList
+                    setLogs={p.setLogs}
+                    weightUnit={(p.exercise.weightUnit as 'kg' | 'lb' | null) ?? weightUnit}
+                    firstSide={firstSide}
+                  />
+                </View>
+              ))}
+            {chain.previousLogs.some((p) => p.setLogs.length > 0) && enriched.setLogs.length > 0 && (
+              <Text style={styles.prevSetsName}>{enriched.exercise.name}</Text>
+            )}
             <SetLogList
               setLogs={enriched.setLogs}
               weightUnit={weightUnit}
@@ -754,7 +842,10 @@ export default function ExerciceDetailLiveScreen() {
             <Text style={styles.sectionTitle}>Historique</Text>
             {history.map((group) => (
               <View key={group.sessionId} style={styles.histGroup}>
-                <Text style={styles.histDate}>{formatDate(group.sessionDate)}</Text>
+                <Text style={styles.histDate}>
+                  {formatDate(group.sessionDate)}
+                  {group.variation ? ` · ${group.variation}` : ''}
+                </Text>
                 <SetLogList setLogs={group.sets} weightUnit={weightUnit} firstSide={firstSide} />
               </View>
             ))}
@@ -778,6 +869,37 @@ export default function ExerciceDetailLiveScreen() {
         prefillPdc={modalPrefillPdc}
         prefillNote={modalPrefillNote}
       />
+
+      <VariationPickerModal
+        visible={showVariationPicker}
+        variations={(enriched.exercise.variations as string[] | null) ?? []}
+        current={effectiveVariation}
+        onSelect={handleSelectVariation}
+        onCreate={handleCreateVariation}
+        onClose={() => setShowVariationPicker(false)}
+      />
+
+      <Modal visible={showSwapPicker} animationType="slide" onRequestClose={() => setShowSwapPicker(false)}>
+        <SafeAreaView style={styles.pickerScreen}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Changer d'exercice</Text>
+            <Pressable onPress={() => setShowSwapPicker(false)}>
+              <Text style={styles.pickerClose}>Annuler</Text>
+            </Pressable>
+          </View>
+          <ExercisePicker
+            cardIndicator="plus"
+            onSelect={(exercise) => {
+              setShowSwapPicker(false);
+              doSwap(exercise);
+            }}
+            onCreateNew={() => {
+              setShowSwapPicker(false);
+              router.push('/exercices/nouveau' as any);
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -793,6 +915,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F2F7' },
   exerciseNameRow: { paddingHorizontal: 4 },
   exerciseName: { fontSize: 20, fontWeight: '700', color: '#1C1C1E' },
+  replacesText: { fontSize: 13, color: '#8E8E93', fontStyle: 'italic' },
+  prevSets: { gap: 2 },
+  prevSetsName: { fontSize: 13, fontWeight: '600', color: '#007AFF' },
+  variationInline: { fontSize: 14, fontWeight: '500', color: '#007AFF' },
+  otherChip: { backgroundColor: '#F2F2F7' },
+  pickerScreen: { flex: 1, backgroundColor: '#f2f2f7' },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#C6C6C8',
+  },
+  pickerTitle: { fontSize: 17, fontWeight: '600', color: '#1C1C1E' },
+  pickerClose: { fontSize: 16, color: '#007AFF' },
   infoToggle: { paddingHorizontal: 4, paddingVertical: 2 },
   infoToggleText: { fontSize: 14, color: '#007AFF', fontWeight: '500' },
   infoSubTitle: { marginTop: 12 },

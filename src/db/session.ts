@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 
 import { db } from './index';
 import {
@@ -36,6 +36,8 @@ export type PerfGroup = {
   sessionDate: string;
   sessionId: string;
   sets: (typeof setLogs.$inferSelect)[];
+  // Variante faite lors de cette séance (exercise_logs.selected_variation), si renseignée
+  variation: string | null;
 };
 
 export type ExerciseLogEnriched = {
@@ -45,6 +47,8 @@ export type ExerciseLogEnriched = {
   mesoSets: (typeof mesoSets.$inferSelect)[];
   programExercise: typeof programExercises.$inferSelect | null;
   mesoExercise: typeof mesoExercises.$inferSelect | null;
+  // Exercice prévu au plan quand l'exercice fait est différent (remplacement, amélioration 14)
+  plannedExercise: typeof exercises.$inferSelect | null;
 };
 
 export type SessionLiveData = {
@@ -193,6 +197,9 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
         supersetGroupId: ex.supersetGroupId ?? null,
         order: ex.order,
         time: now,
+        // Le log porte la variante réellement faite : un changement ultérieur du plan
+        // ne réécrit pas l'historique.
+        selectedVariation: ex.selectedVariation ?? null,
       });
     }
   } else if (resolvedProgramSessionId) {
@@ -211,6 +218,7 @@ export async function startWorkoutSession(params: StartParams): Promise<string> 
         supersetGroupId: ex.supersetGroupId ?? null,
         order: ex.order,
         time: now,
+        selectedVariation: ex.selectedVariation ?? null,
       });
     }
   }
@@ -234,6 +242,74 @@ export async function addFreeExerciseLog(
     time: new Date().toISOString(),
   });
   return logId;
+}
+
+// ─── Remplacer l'exercice en cours (amélioration 14) ──────────────────────────
+// Renvoie l'id du log à afficher.
+// - 0 série enregistrée : on change simplement l'exercice du log (le plan reste lié).
+// - ≥ 1 série : le log d'origine garde ses séries et passe « fait » ; un nouveau log est
+//   créé juste après lui (même ligne de plan, même superset). Ses séries reprendront
+//   à la suite des séries déjà faites (voir getChainInfo, src/utils/exerciseSwap.ts).
+// La variante repart à « Aucune » ('') : celle du plan concerne l'exercice d'origine.
+// Le plan (méso/programme) n'est jamais modifié.
+
+export async function swapExerciseLog(logId: string, newExerciseId: string): Promise<string> {
+  const [log] = await db.select().from(exerciseLogs).where(eq(exerciseLogs.id, logId));
+  if (!log || log.exerciseId === newExerciseId) return logId;
+
+  const logged = await db.select({ id: setLogs.id }).from(setLogs).where(eq(setLogs.exerciseLogId, logId));
+  if (logged.length === 0) {
+    await db
+      .update(exerciseLogs)
+      .set({ exerciseId: newExerciseId, selectedVariation: '' })
+      .where(eq(exerciseLogs.id, logId));
+    return logId;
+  }
+
+  // Faire de la place juste après le log d'origine
+  const later = await db
+    .select()
+    .from(exerciseLogs)
+    .where(and(eq(exerciseLogs.workoutSessionId, log.workoutSessionId), gt(exerciseLogs.order, log.order)));
+  for (const l of later) {
+    await db.update(exerciseLogs).set({ order: l.order + 1 }).where(eq(exerciseLogs.id, l.id));
+  }
+
+  await db.update(exerciseLogs).set({ isDone: true }).where(eq(exerciseLogs.id, logId));
+
+  const newId = generateId();
+  await db.insert(exerciseLogs).values({
+    id: newId,
+    workoutSessionId: log.workoutSessionId,
+    exerciseId: newExerciseId,
+    programExerciseId: log.programExerciseId,
+    mesoExerciseId: log.mesoExerciseId,
+    supersetGroupId: log.supersetGroupId,
+    order: log.order + 1,
+    time: new Date().toISOString(),
+    selectedVariation: '',
+  });
+  return newId;
+}
+
+// ─── Variante réellement faite (amélioration 14) ───────────────────────────────
+
+// null = « Aucune » : stocké '' pour la distinguer d'une variante non renseignée (null).
+export async function setExerciseLogVariation(logId: string, variation: string | null): Promise<void> {
+  await db
+    .update(exerciseLogs)
+    .set({ selectedVariation: variation ?? '' })
+    .where(eq(exerciseLogs.id, logId));
+}
+
+// Ajoute une variante au catalogue de l'exercice (comme le fait la fiche exercice), sans doublon.
+export async function addVariationToExercise(exerciseId: string, value: string): Promise<void> {
+  const v = value.trim();
+  if (!v) return;
+  const [row] = await db.select({ variations: exercises.variations }).from(exercises).where(eq(exercises.id, exerciseId));
+  const current = (row?.variations as string[] | null) ?? [];
+  if (current.includes(v)) return;
+  await db.update(exercises).set({ variations: [...current, v] }).where(eq(exercises.id, exerciseId));
 }
 
 // ─── Enregistrer une série ────────────────────────────────────────────────────
@@ -432,6 +508,7 @@ export async function getSessionLive(sessionId: string): Promise<SessionLiveData
     .orderBy(asc(exerciseLogs.order));
 
   const enriched: ExerciseLogEnriched[] = [];
+  const plannedCache = new Map<string, typeof exercises.$inferSelect | null>();
   for (const { log, exercise } of logRows) {
     const sets = await db
       .select()
@@ -462,7 +539,26 @@ export async function getSessionLive(sessionId: string): Promise<SessionLiveData
       pe = row ?? null;
     }
 
-    enriched.push({ log, exercise, setLogs: sets, mesoSets: msets, programExercise: pe, mesoExercise: me });
+    // Exercice prévu au plan, uniquement s'il diffère de celui qui est fait
+    let planned: typeof exercises.$inferSelect | null = null;
+    const plannedId = (me ?? pe)?.exerciseId;
+    if (plannedId && plannedId !== log.exerciseId) {
+      if (!plannedCache.has(plannedId)) {
+        const [p] = await db.select().from(exercises).where(eq(exercises.id, plannedId));
+        plannedCache.set(plannedId, p ?? null);
+      }
+      planned = plannedCache.get(plannedId) ?? null;
+    }
+
+    enriched.push({
+      log,
+      exercise,
+      setLogs: sets,
+      mesoSets: msets,
+      programExercise: pe,
+      mesoExercise: me,
+      plannedExercise: planned,
+    });
   }
 
   return { session, exerciseLogs: enriched };
@@ -520,15 +616,20 @@ export async function getPreviousPerfs(
 
   // Groupement par session
   const groups: Record<string, (typeof setLogs.$inferSelect)[]> = {};
+  const variations: Record<string, string> = {};
   for (const { sl, el } of filteredLogs) {
     if (!groups[el.workoutSessionId]) groups[el.workoutSessionId] = [];
     groups[el.workoutSessionId].push(sl);
+    if (el.selectedVariation && !variations[el.workoutSessionId]) {
+      variations[el.workoutSessionId] = el.selectedVariation;
+    }
   }
 
   return recentSessionIds.map((sid) => ({
     sessionId: sid,
     sessionDate: dateBySessionId[sid],
     sets: groups[sid] ?? [],
+    variation: variations[sid] ?? null,
   }));
 }
 

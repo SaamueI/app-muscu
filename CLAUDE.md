@@ -70,6 +70,7 @@ src/
     ActiveSessionBanner.tsx # Bandeau reprise séance globale (phase 11), déplaçable ; croix = alerte Annuler/Terminer/Retour
     live/ObjectivesList.tsx # Objectifs + avancement vert/bleu (amélioration 13, réutilisé par le superset)
     live/SetLogList.tsx     # Séries enregistrées G/D (côté de départ en premier) ; sans callbacks = lecture seule
+    live/VariationPickerModal.tsx # Sélecteur de variante de la séance + « nouvelle variante » (amélioration 14)
     SessionClock.tsx        # Chrono global de séance pour les headers natifs (amélioration 11)
     ImportScreen.tsx        # Écran d'import générique réutilisé par méso/programme (phase 12)
   utils/
@@ -78,6 +79,7 @@ src/
     mesoDeletePref.ts      # Flag "ne plus demander" suppression de séance
     activeSessionStore.ts  # Store éphémère timer en cours de séance (+ sessionStartedAt)
     exerciseProgress.ts    # Moteur PUR d'avancement (computeProgress, isUnilateralHint, getEffectiveRest) — `npm run test:progress`
+    exerciseSwap.ts        # PUR : variante effective + chaîne de remplacements d'exercice (amélioration 14) — `npm run test:swap`
     sessionExitFlow.ts     # promptCancelSession / finishSessionNow / promptExitSession (écran séance + widget)
     useSessionTimer.ts     # Hooks useActiveSessionTick (tick 1s, phase 11) + useReloadOnSessionEnded (recharge un écran quand une séance finit/est annulée)
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
@@ -122,7 +124,7 @@ Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.cr
 
 **Piège découvert avec la migration 0014 (plusieurs `ALTER TABLE` dans un même fichier) :** le migrateur Expo/Drizzle (`node_modules/drizzle-orm/expo-sqlite/migrator.js`) ne découpe un fichier `.sql` en instructions séparées que sur le marqueur littéral `--> statement-breakpoint`. Sans ce marqueur, tout le fichier est envoyé en un seul bloc à `NativeDatabase.prepareSync`, qui ne compile et n'exécute **que la toute première instruction** — les suivantes sont silencieusement ignorées, sans erreur, et la migration est quand même marquée comme appliquée. Toujours séparer chaque instruction SQL par une ligne `--> statement-breakpoint` dès qu'un fichier de migration en contient plus d'une (voir `0010_workout_session_live.sql` ou `0011_meso_calendar_anchor.sql` pour l'exemple). Un fichier à une seule instruction n'en a pas besoin.
 
-**Prochain `when` disponible** : > `1782700008000` (dernière migration : 0018).
+**Prochain `when` disponible** : > `1782700009000` (dernière migration : 0019).
 
 **Diagramme ER** : [docs/schema-diagramme.md](docs/schema-diagramme.md) (Mermaid, en code — pas besoin de le compiler). **Toute session qui modifie le schéma** (nouvelle colonne, nouvelle table, migration) doit le régénérer avant de terminer, à partir de `src/db/schema.ts` — comparer champ par champ avec la version existante plutôt que de tout réécrire à l'aveugle.
 
@@ -180,6 +182,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0016 | meso_exercise_note | `meso_exercises.note` (amélioration 06) |
 | 0017 | set_log_note | `set_logs.note` (amélioration 12 : note par série) |
 | 0018 | user_first_side | `user_settings.first_side` (amélioration 13 : côté de départ unilatéral, `'L'` par défaut) |
+| 0019 | exercise_log_variation | `exercise_logs.selected_variation` (amélioration 14 : variante réellement faite ; `''` = aucune explicite) |
 
 ---
 
@@ -240,6 +243,14 @@ Détails complets : [docs/phase-11-seance-live-ameliorations.md](docs/phase-11-s
 
 ---
 
+## Séance live : remplacer l'exercice et variante effective (amélioration 14)
+
+Le plan (méso/programme) n'est jamais modifié : tout est porté par `exercise_logs`. `swapExerciseLog` (`src/db/session.ts`) change l'exercice du log s'il n'a aucune série ; sinon le log d'origine passe « fait » et un **nouveau log** (même ligne de plan, `order + 1`) prend le relais. La « chaîne » des remplacements est **déduite** (logs de la séance avec la même ligne de plan et un `order` inférieur, `src/utils/exerciseSwap.ts`) : elle donne `startSetNumber` (les séries de l'alternative reprennent à N+1, passé à `computeProgress`) et les séries des exercices remplacés (affichées en lecture seule). La variante réellement faite est `exercise_logs.selected_variation` (`''` = « Aucune » explicite, `null` = log antérieur à la migration → repli sur le plan) ; toujours la lire via `getEffectiveVariation`. `getSessionLive` expose `plannedExercise` (mention « remplace … »). `moveActiveExerciseLog` fait suivre le chrono actif et ses réglages éphémères au nouveau log. Tests : `npm run test:swap`.
+
+Détails complets : [docs/ameliorations/14-exercice-live-alternative.md](docs/ameliorations/14-exercice-live-alternative.md) (§ Notes d'implémentation).
+
+---
+
 ## Import : écrans dédiés, CSV, prompt LLM, templates (phase 12)
 
 Écrans d'import dédiés (`app/programmes/import.tsx`/`app/mesocycles/import.tsx`, composant partagé `ImportScreen.tsx`), format CSV en plus du XLSX, templates téléchargeables générés depuis un pivot d'exemple (`core/sampleData.ts`), prompt LLM copiable, et anti-doublons d'exercices : prompt enrichi du catalogue existant + écran de réconciliation post-import (`exercices/reconcilier.tsx`, matching FR→EN dans `src/export/core/exerciseMatch.ts`, remap via `src/db/exerciseMerge.ts`).
@@ -292,6 +303,7 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 11 | Séance live : préremplissage par dernières perfs, chrono de repos visible partout, interruption de séance + bandeau de reprise déplaçable, état "en cours" du calendrier | ✅ |
 | 11bis | Amélioration 11 : chrono global de séance (écran séance, écran exercice, widget), flèche = interrompre, croix du widget = Annuler/Terminer/Retour, ré-hydratation après kill de l'app | ✅ |
 | 12 | Import : écrans dédiés, prompt LLM copiable (+ catalogue existant), import CSV, templates, anti-doublons d'exercices (prompt enrichi + réconciliation post-import) | ✅ |
+| 12bis | Améliorations 12-14 (séance live) : saisie des séries, avancement/unilatéral/repos, remplacement d'exercice + variante effective | ✅ |
 
 ## Phases restantes
 

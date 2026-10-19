@@ -49,6 +49,26 @@ export function setActiveSession(updates: Partial<ActiveSession>): void {
   state = { ...state, ...updates };
 }
 
+// Remplacement d'exercice en cours de route (amélioration 14) : l'exercice actif change de
+// log, on déplace donc avec lui ses réglages éphémères. Sans effet sur l'exercice actif
+// si `fromId` n'en est pas un.
+export function moveActiveExerciseLog(fromId: string, toId: string, exerciseName: string): void {
+  const move = <T,>(rec: Record<string, T>): Record<string, T> => {
+    if (!(fromId in rec)) return rec;
+    const { [fromId]: value, ...rest } = rec;
+    return { ...rest, [toId]: value };
+  };
+  const wasActive = state.activeExerciseLogId === fromId;
+  state = {
+    ...state,
+    activeExerciseLogId: wasActive ? toId : state.activeExerciseLogId,
+    restForExerciseName: wasActive ? exerciseName : state.restForExerciseName,
+    restOverrideByLog: move(state.restOverrideByLog),
+    halveRestByLog: move(state.halveRestByLog),
+    startSideByLog: move(state.startSideByLog),
+  };
+}
+
 export function resetActiveSession(): void {
   state = { ...DEFAULT };
 }

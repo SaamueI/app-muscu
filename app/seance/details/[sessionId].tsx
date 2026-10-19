@@ -13,6 +13,7 @@ import {
 import { getFirstSide } from '../../../src/db/settings';
 import { STATUS_COLORS, STATUS_LABELS } from '../../../src/utils/eventStatus';
 import SetLogList from '../../../src/components/live/SetLogList';
+import { getEffectiveVariation } from '../../../src/utils/exerciseSwap';
 
 type CalendarEvent = typeof calendarEvents.$inferSelect;
 
@@ -101,7 +102,13 @@ export default function SessionDetailsScreen() {
         const unit = (enriched.exercise.weightUnit as 'kg' | 'lb' | null) ?? weightUnit;
         return (
           <View key={enriched.log.id} style={styles.section}>
-            <Text style={styles.sectionTitle}>{enriched.exercise.name}</Text>
+            <Text style={styles.sectionTitle}>
+              {enriched.exercise.name}
+              {getEffectiveVariation(enriched) ? ` · ${getEffectiveVariation(enriched)}` : ''}
+            </Text>
+            {enriched.plannedExercise && (
+              <Text style={styles.replacesText}>remplace {enriched.plannedExercise.name}</Text>
+            )}
             {enriched.setLogs.length === 0 ? (
               <Text style={styles.emptyText}>Aucune série enregistrée</Text>
             ) : (
@@ -150,6 +157,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  replacesText: { fontSize: 13, color: '#8E8E93', fontStyle: 'italic', marginTop: -6 },
   emptyText: { fontSize: 14, color: '#8E8E93', fontStyle: 'italic' },
 
   setRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', paddingVertical: 4 },

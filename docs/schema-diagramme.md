@@ -96,6 +96,7 @@ erDiagram
         int order
         text time
         text note
+        text selected_variation "variante réellement faite ; chaîne vide = aucune"
     }
 
     SET_LOGS {

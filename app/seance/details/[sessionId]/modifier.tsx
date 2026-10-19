@@ -18,6 +18,7 @@ import {
   type SetLogData,
 } from '../../../../src/db/session';
 import { getFirstSide } from '../../../../src/db/settings';
+import { getChainInfoFor, getEffectiveVariation } from '../../../../src/utils/exerciseSwap';
 import { formatSetLine } from '../../../../src/utils/formatSetLine';
 
 type SetLogRow = typeof setLogs.$inferSelect;
@@ -111,13 +112,15 @@ export default function SessionEditScreen() {
 
   const startAddSet = (enriched: ExerciseLogEnriched, unit: 'kg' | 'lb', unilateral: boolean) => {
     const maxSetNumber = enriched.setLogs.reduce((max, sl) => Math.max(max, sl.setNumber ?? 0), 0);
+    // Exercice qui en remplace un autre : ses séries reprennent à la suite de celles déjà faites
+    const chainStart = getChainInfoFor(enriched.log.id, data?.exerciseLogs ?? []).startSetNumber;
     setEditContext(null);
     setAddPrefill(null);
     setAddContext({
       exerciseLogId: enriched.log.id,
       exerciseId: enriched.exercise.id,
       unit,
-      setNumber: maxSetNumber + 1,
+      setNumber: Math.max(maxSetNumber + 1, chainStart),
       side: unilateral ? firstSide : null,
       unilateral,
     });
@@ -265,7 +268,13 @@ export default function SessionEditScreen() {
 
           return (
             <View key={enriched.log.id} style={styles.section}>
-              <Text style={styles.sectionTitle}>{enriched.exercise.name}</Text>
+              <Text style={styles.sectionTitle}>
+                {enriched.exercise.name}
+                {getEffectiveVariation(enriched) ? ` · ${getEffectiveVariation(enriched)}` : ''}
+              </Text>
+              {enriched.plannedExercise && (
+                <Text style={styles.replacesText}>remplace {enriched.plannedExercise.name}</Text>
+              )}
               {enriched.setLogs.length === 0 ? (
                 <Text style={styles.emptyText}>Aucune série enregistrée</Text>
               ) : (
@@ -386,6 +395,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  replacesText: { fontSize: 13, color: '#8E8E93', fontStyle: 'italic', marginTop: -6 },
   emptyText: { fontSize: 14, color: '#8E8E93', fontStyle: 'italic' },
 
   setRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 6 },

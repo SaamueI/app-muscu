@@ -1,0 +1,1 @@
+ALTER TABLE `exercise_logs` ADD COLUMN `selected_variation` text;

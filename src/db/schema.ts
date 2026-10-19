@@ -143,6 +143,9 @@ export const exerciseLogs = sqliteTable('exercise_logs', {
   order: integer('order').notNull(),
   time: text('time').notNull(),
   note: text('note'),
+  // Variante réellement faite (amélioration 14). null = non renseignée (log antérieur
+  // à la migration) ; '' = « Aucune » choisie explicitement.
+  selectedVariation: text('selected_variation'),
 });
 
 // ─── SetLog ───────────────────────────────────────────────────────────────────
