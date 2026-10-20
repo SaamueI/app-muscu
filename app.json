@@ -4,7 +4,7 @@
     "slug": "muscu-app",
     "version": "1.0.2",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/shrek-icon.png",
     "scheme": "muscuapp",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,9 +13,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/shrek-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "versionCode": 3,
@@ -31,13 +29,14 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/shrek-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
       ],
       "expo-sqlite",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/withAndroidAbis"
     ],
     "assetBundlePatterns": [
       "assets/**"
