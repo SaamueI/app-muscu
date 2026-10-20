@@ -14,6 +14,8 @@ type Props = {
   // Sans callbacks, la liste est en lecture seule (historique)
   onEdit?: (setLog: SetLogRow) => void;
   onDelete?: (setLogsOfSet: SetLogRow[], setNumber: number) => void;
+  // Série « à encoder » (amélioration 01b) : un tap ouvre sa saisie, le ⋮ garde le menu
+  onEncode?: (setLog: SetLogRow) => void;
 };
 
 // Regroupe les lignes par numéro de série ; dans chaque groupe, le côté de départ
@@ -32,7 +34,7 @@ function groupBySet(rows: SetLogRow[], firstSide: 'L' | 'R') {
 
 const sideLetter = (side: string | null) => (side === 'L' ? 'G : ' : side === 'R' ? 'D : ' : '');
 
-export default function SetLogList({ setLogs: rows, weightUnit, firstSide, onEdit, onDelete }: Props) {
+export default function SetLogList({ setLogs: rows, weightUnit, firstSide, onEdit, onDelete, onEncode }: Props) {
   const editable = onEdit != null && onDelete != null;
 
   const openMenu = (setNumber: number, group: SetLogRow[]) => {
@@ -60,13 +62,15 @@ export default function SetLogList({ setLogs: rows, weightUnit, firstSide, onEdi
   return (
     <>
       {groupBySet(rows, firstSide).map(({ setNumber, rows: group }) => {
+        const pending = group.find((r) => r.isPending) ?? null;
+        const encodeOnTap = editable && pending != null && onEncode != null;
         const content = (
           <>
             <Text style={styles.setNum}>#{setNumber}</Text>
             <View style={styles.setDetails}>
               {group.map((r, idx) => (
                 <View key={r.id}>
-                  <Text style={[styles.setLine, idx > 0 && styles.setLineSub]}>
+                  <Text style={[styles.setLine, idx > 0 && styles.setLineSub, r.isPending && styles.setLinePending]}>
                     {sideLetter(r.side)}
                     {formatSetLine(r, weightUnit)}
                   </Text>
@@ -74,11 +78,23 @@ export default function SetLogList({ setLogs: rows, weightUnit, firstSide, onEdi
                 </View>
               ))}
             </View>
-            {editable && <Text style={styles.editHint}>⋮</Text>}
+            {editable &&
+              (encodeOnTap ? (
+                // Le tap sur la ligne encode ; le ⋮ ouvre le menu (Modifier / Supprimer)
+                <Pressable hitSlop={10} onPress={() => openMenu(setNumber, group)}>
+                  <Text style={styles.editHint}>⋮</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.editHint}>⋮</Text>
+              ))}
           </>
         );
         return editable ? (
-          <Pressable key={setNumber} style={styles.setRow} onPress={() => openMenu(setNumber, group)}>
+          <Pressable
+            key={setNumber}
+            style={styles.setRow}
+            onPress={() => (encodeOnTap ? onEncode!(pending!) : openMenu(setNumber, group))}
+          >
             {content}
           </Pressable>
         ) : (
@@ -102,5 +118,6 @@ const styles = StyleSheet.create({
   setDetails: { flex: 1, gap: 2 },
   setLine: { fontSize: 15, color: '#1C1C1E' },
   setLineSub: { fontSize: 13, color: '#8E8E93' },
+  setLinePending: { color: '#C77700' },
   editHint: { fontSize: 16, color: '#C7C7CC', paddingHorizontal: 4 },
 });

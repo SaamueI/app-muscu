@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,35 +13,26 @@ import {
 } from 'react-native';
 
 import ExercisePicker from '../../../src/components/ExercisePicker';
-import { ExerciseImageCarousel } from '../../../src/components/ExerciseImageCarousel';
 import GlobalRestBanner from '../../../src/components/GlobalRestBanner';
+import ExerciseInfoPanel from '../../../src/components/live/ExerciseInfoPanel';
 import ObjectivesList from '../../../src/components/live/ObjectivesList';
 import SetLogList from '../../../src/components/live/SetLogList';
 import VariationPickerModal from '../../../src/components/live/VariationPickerModal';
 import RestPresetPicker from '../../../src/components/RestPresetPicker';
 import SetPerformanceModal from '../../../src/components/SetPerformanceModal';
 import TimerDisplay from '../../../src/components/TimerDisplay';
-import { db } from '../../../src/db';
-import { exerciseLogs, exercises, setLogs } from '../../../src/db/schema';
+import { exercises, setLogs } from '../../../src/db/schema';
 import {
   addVariationToExercise,
   deleteSetLog,
-  getAlternativeExercises,
-  getPreviousPerfs,
-  getRestPresets,
-  getSessionLive,
-  getUserWeightUnit,
   markExerciseDone,
   renumberSetsAfterDelete,
   saveSetLog,
   setExerciseLogVariation,
   swapExerciseLog,
   updateSetLog,
-  type ExerciseLogEnriched,
-  type PerfGroup,
   type SetLogData,
 } from '../../../src/db/session';
-import { getFirstSide } from '../../../src/db/settings';
 import {
   getActiveSession,
   moveActiveExerciseLog,
@@ -54,47 +44,34 @@ import {
   getEffectiveRest,
   isUnilateralHint,
 } from '../../../src/utils/exerciseProgress';
-import { getChainInfoFor, getEffectiveVariation, type ChainInfo } from '../../../src/utils/exerciseSwap';
+import { getEffectiveVariation } from '../../../src/utils/exerciseSwap';
+import {
+  computePrefill,
+  getTargetExecutionSeconds as targetExecutionSeconds,
+  getTargetRestSeconds as targetRestSeconds,
+} from '../../../src/utils/setPrefill';
+import { useExerciseLiveData } from '../../../src/utils/useExerciseLiveData';
+import { useSuspendAutoStart } from '../../../src/utils/useSessionTimer';
 
 type SetLogRow = typeof setLogs.$inferSelect;
-
-type RestPreset = { id: string; seconds: number; sortOrder: number };
 
 export default function ExerciceDetailLiveScreen() {
   const { logId } = useLocalSearchParams<{ logId: string }>();
   const router = useRouter();
 
-  const [enriched, setEnriched] = useState<ExerciseLogEnriched | null>(null);
-  const [alternatives, setAlternatives] = useState<(typeof exercises.$inferSelect)[]>([]);
-  const [infoExpanded, setInfoExpanded] = useState(false);
-  const [history, setHistory] = useState<PerfGroup[]>([]);
-  const [presets, setPresets] = useState<RestPreset[]>([]);
-  const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  // Chargement partagé avec l'écran superset (src/utils/useExerciseLiveData.ts)
+  const { enriched, alternatives, history, presets, weightUnit, chain, defaultFirstSide, reload } =
+    useExerciseLiveData(logId);
   const [, setTick] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSetLog, setEditingSetLog] = useState<SetLogRow | null>(null);
   // Remplacement d'exercice / variante (amélioration 14)
-  const [chain, setChain] = useState<ChainInfo<ExerciseLogEnriched>>({
-    startSetNumber: 1,
-    previousSets: [],
-    previousLogs: [],
-  });
   const [showSwapPicker, setShowSwapPicker] = useState(false);
   const [showVariationPicker, setShowVariationPicker] = useState(false);
-  const autoFiredRef = useRef(false);
-  // Prochaine série à démarrer, lue par le timer auto (l'intervalle ne se recrée pas à
-  // chaque rendu : il passe par cette ref pour avoir la valeur à jour).
-  const autoStartRef = useRef<{ setNumber: number; side: 'L' | 'R' | null; execSeconds: number | null }>({
-    setNumber: 1,
-    side: null,
-    execSeconds: null,
-  });
   // Le pré-réglage « Unilatéral » ne s'applique qu'une fois par ouverture de l'écran,
   // sinon il écraserait le choix manuel de l'utilisateur à chaque retour sur l'écran.
   const hintAppliedRef = useRef(false);
 
-  // Côté de départ des séries unilatérales (réglage Paramètres)
-  const [defaultFirstSide, setDefaultFirstSide] = useState<'L' | 'R'>('L');
   // Toggle « Unilatéral » tant que cet exercice n'est pas l'exercice actif du timer
   // global ; quand il l'est, la valeur vit dans le store (activeSessionStore).
   const [localIsUnilateral, setLocalIsUnilateral] = useState(false);
@@ -102,147 +79,48 @@ export default function ExerciceDetailLiveScreen() {
   // ─── Chargement initial ───────────────────────────────────────────────────
 
   const load = useCallback(async () => {
-    if (!logId) return;
-    const [logRow] = await db
-      .select({ log: exerciseLogs, exercise: exercises })
-      .from(exerciseLogs)
-      .innerJoin(exercises, eq(exerciseLogs.exerciseId, exercises.id))
-      .where(eq(exerciseLogs.id, logId));
-    if (!logRow) return;
+    const loaded = await reload();
+    if (!loaded || !logId) return;
 
-    const liveData = await getSessionLive(logRow.log.workoutSessionId);
-    const found = liveData?.exerciseLogs.find((el) => el.log.id === logId) ?? null;
-    setEnriched(found);
-    setChain(getChainInfoFor(logId, liveData?.exerciseLogs ?? []));
-
-    const altIds =
-      (found?.mesoExercise?.alternativeExerciseIds as string[] | null) ??
-      (found?.programExercise?.alternativeExerciseIds as string[] | null) ??
-      null;
-    setAlternatives(await getAlternativeExercises(altIds));
-
-    const perfs = await getPreviousPerfs(logRow.log.exerciseId, 5, logRow.log.workoutSessionId);
-    setHistory(perfs);
-
-    const ps = await getRestPresets();
-    setPresets(ps);
-
-    const userUnit = await getUserWeightUnit();
-    const exUnit = logRow.exercise.weightUnit as 'kg' | 'lb' | null;
-    setWeightUnit(exUnit ?? userUnit);
-
-    setDefaultFirstSide(await getFirstSide());
-
-    // Pré-réglage du toggle « Unilatéral » (une fois par ouverture) : variante prévue
-    // « unilatéral », ou séries G/D déjà vues (cette séance + dernière séance).
+    // Pré-réglage du toggle « Unilatéral » (une fois par ouverture) : choix déjà fait sur
+    // un autre écran (superset), sinon variante prévue « unilatéral », ou séries G/D déjà
+    // vues (cette séance + dernière séance).
     if (!hintAppliedRef.current) {
       hintAppliedRef.current = true;
       if (getActiveSession().activeExerciseLogId !== logId) {
+        const found = loaded.enriched;
         const variation = found ? getEffectiveVariation(found) : null;
         setLocalIsUnilateral(
-          isUnilateralHint({
-            variation,
-            lastPerf: [...(found?.setLogs ?? []), ...(perfs[0]?.sets ?? [])],
-          })
+          getActiveSession().unilateralByLog[logId] ??
+            isUnilateralHint({
+              variation,
+              lastPerf: [...(found?.setLogs ?? []), ...(loaded.history[0]?.sets ?? [])],
+            })
         );
       }
     }
-  }, [logId]);
+  }, [reload, logId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // ─── Timer tick + auto-mode ───────────────────────────────────────────────
+  // ─── Timer tick ───────────────────────────────────────────────────────────
+  // Le démarrage auto en fin de repos est fait par le minuteur GLOBAL (useAutoStartTicker,
+  // app/_layout.tsx) : ici on ne fait que rafraîchir l'affichage chaque seconde.
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTick((t) => t + 1);
-
-      const s = getActiveSession();
-      if (
-        s.activeExerciseLogId === logId &&
-        s.timerPhase === 'rest' &&
-        s.timerTargetSeconds != null &&
-        s.timerMode === 'auto' &&
-        !modalVisible
-      ) {
-        const elapsed = Math.floor((Date.now() - s.timerStartedAt) / 1000);
-        if (elapsed >= s.timerTargetSeconds) {
-          if (autoFiredRef.current) return;
-          autoFiredRef.current = true;
-          // Démarrer automatiquement la prochaine exécution
-          const nextUp = autoStartRef.current;
-          setActiveSession({
-            timerPhase: 'execution',
-            timerStartedAt: Date.now(),
-            timerTargetSeconds: nextUp.execSeconds,
-            currentSetNumber: nextUp.setNumber,
-            currentSide: nextUp.side,
-          });
-        }
-      }
-    }, 1000);
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
-  }, [logId, modalVisible]);
+  }, []);
+
+  useSuspendAutoStart(modalVisible || showSwapPicker || showVariationPicker);
 
   // ─── Helpers d'objectifs ──────────────────────────────────────────────────
 
-  function getTargetRestSeconds(setNumber: number): number | null {
-    if (!enriched) return null;
-    const setIdx = setNumber - 1;
-    if (enriched.mesoSets.length > 0) {
-      const ms = enriched.mesoSets[setIdx] ?? enriched.mesoSets[enriched.mesoSets.length - 1];
-      return ms.targetRestSeconds ?? null;
-    }
-    return enriched.programExercise?.targetRestSeconds ?? null;
-  }
+  const getTargetRestSeconds = (setNumber: number): number | null =>
+    enriched ? targetRestSeconds(enriched, setNumber) : null;
 
-  function getTargetExecutionSeconds(setNumber: number): number | null {
-    if (!enriched) return null;
-    const setIdx = setNumber - 1;
-    if (enriched.mesoSets.length > 0) {
-      const ms = enriched.mesoSets[setIdx] ?? enriched.mesoSets[enriched.mesoSets.length - 1];
-      return ms.targetDurationSeconds ?? null;
-    }
-    return enriched.programExercise?.targetDurationSeconds ?? null;
-  }
-
-  function getCurrentMesoSet(setNumber: number) {
-    if (!enriched) return null;
-    const idx = setNumber - 1;
-    if (enriched.mesoSets.length > 0) {
-      return enriched.mesoSets[idx] ?? enriched.mesoSets[enriched.mesoSets.length - 1];
-    }
-    return null;
-  }
-
-  function getPrefillFromHistory(
-    setNumber: number,
-    side: 'L' | 'R' | null,
-    isUnilateral: boolean
-  ): SetLogRow | null {
-    const last = history[0];
-    if (!last || last.sets.length === 0) return null;
-    const sideFilter = (sl: SetLogRow) =>
-      isUnilateral ? sl.side === side : sl.side == null || sl.side === side;
-    const candidates = last.sets.filter(sideFilter);
-    if (candidates.length === 0) return null;
-    const sameSetNumber = candidates.find((sl) => sl.setNumber === setNumber);
-    if (sameSetNumber) return sameSetNumber;
-    return candidates[candidates.length - 1];
-  }
-
-  // Série précédente de LA SÉANCE EN COURS (priorité sur l'historique des
-  // séances passées, pour les séries après la première).
-  function getPrefillFromCurrentSession(
-    setNumber: number,
-    side: 'L' | 'R' | null,
-    isUnilateral: boolean
-  ): SetLogRow | null {
-    if (!enriched || setNumber <= 1) return null;
-    const sideFilter = (sl: SetLogRow) =>
-      isUnilateral ? sl.side === side : sl.side == null || sl.side === side;
-    return enriched.setLogs.find((sl) => sl.setNumber === setNumber - 1 && sideFilter(sl)) ?? null;
-  }
+  const getTargetExecutionSeconds = (setNumber: number): number | null =>
+    enriched ? targetExecutionSeconds(enriched, setNumber) : null;
 
   // ─── Avancement : dérivé des séries enregistrées, aucun compteur à la main ─
 
@@ -275,11 +153,28 @@ export default function ExerciceDetailLiveScreen() {
   const restOverride = s.restOverrideByLog[logId ?? ''] ?? null;
   // Le repos qui s'applique est celui de la série qu'on vient de finir, pas de la suivante.
   const restSetNumber = phase === 'rest' ? s.currentSetNumber : effSetNumber;
-  autoStartRef.current = {
-    setNumber: effSetNumber,
-    side: effCurrentSide,
-    execSeconds: getTargetExecutionSeconds(effSetNumber),
-  };
+  // Prochaine série publiée pour le minuteur global — seulement par l'écran qui possède le
+  // chrono, et seulement si la série qu'on vient de terminer est enregistrée : sinon
+  // (modal fermé sans valider) « la prochaine » serait cette même série, et on la relancerait.
+  if (isActive && logId) {
+    const finishedSaved =
+      phase !== 'rest' ||
+      loggedSets.some((l) => l.setNumber === s.currentSetNumber && (l.side ?? null) === (s.currentSide ?? null));
+    const next = finishedSaved
+      ? {
+          logId,
+          setNumber: effSetNumber,
+          side: effCurrentSide,
+          execSeconds: getTargetExecutionSeconds(effSetNumber),
+          superset: false,
+        }
+      : null;
+    const prev = s.autoNext;
+    const changed =
+      (prev == null) !== (next == null) ||
+      (prev && next && (prev.logId !== next.logId || prev.setNumber !== next.setNumber || prev.side !== next.side || prev.execSeconds !== next.execSeconds));
+    if (changed) setActiveSession({ autoNext: next });
+  }
 
   const refresh = () => setTick((t) => t + 1);
 
@@ -309,7 +204,6 @@ export default function ExerciceDetailLiveScreen() {
       currentSide: effCurrentSide,
       currentSetNumber: effSetNumber,
     });
-    autoFiredRef.current = false;
     refresh();
   };
 
@@ -327,12 +221,13 @@ export default function ExerciceDetailLiveScreen() {
       }),
       lastExecutionSeconds: executionSeconds,
       restForExerciseName: enriched?.exercise.name ?? null,
+      // La prochaine série sera republiée une fois celle-ci enregistrée
+      autoNext: null,
       // La série qu'on termine : c'est son repos qui court, jusqu'au prochain « Commencer »
       isUnilateral: effIsUnilateral,
       currentSide: effCurrentSide,
       currentSetNumber: effSetNumber,
     });
-    autoFiredRef.current = false;
     setModalVisible(true);
   };
 
@@ -344,7 +239,6 @@ export default function ExerciceDetailLiveScreen() {
       restOverrideByLog: { ...st.restOverrideByLog, [logId]: seconds },
       ...retargetRunningRest(seconds, halveRest),
     });
-    autoFiredRef.current = false;
     refresh();
   };
 
@@ -355,13 +249,16 @@ export default function ExerciceDetailLiveScreen() {
     const next = { ...st.restOverrideByLog };
     delete next[logId];
     setActiveSession({ restOverrideByLog: next, ...retargetRunningRest(null, halveRest) });
-    autoFiredRef.current = false;
     refresh();
   };
 
   const handleToggleUnilateral = (v: boolean) => {
     if (isActive) setActiveSession({ isUnilateral: v });
     else setLocalIsUnilateral(v);
+    // Mémorisé pour la séance : l'écran superset reprend ce choix au lieu de le redétecter
+    if (logId) {
+      setActiveSession({ unilateralByLog: { ...getActiveSession().unilateralByLog, [logId]: v } });
+    }
     // Le ÷ 2 ne s'applique qu'en unilatéral : le décompte en cours doit suivre.
     const halve = v && (getActiveSession().halveRestByLog[logId ?? ''] ?? false);
     setActiveSession(retargetRunningRest(restOverride, halve));
@@ -402,7 +299,6 @@ export default function ExerciceDetailLiveScreen() {
     // Le repos déjà lancé par « Terminer série » continue ; la série/le côté suivants
     // sont recalculés par load() depuis les séries enregistrées.
     setActiveSession({ lastExecutionSeconds: null, restForExerciseName: enriched?.exercise.name ?? null });
-    autoFiredRef.current = false;
 
     load();
   };
@@ -524,31 +420,22 @@ export default function ExerciceDetailLiveScreen() {
   }
 
   const isEditing = editingSetLog != null;
-  const mesoSet = getCurrentMesoSet(effSetNumber);
-  const histSet = isEditing
-    ? null
-    : getPrefillFromCurrentSession(effSetNumber, effCurrentSide, effCurrentSide != null) ??
-      getPrefillFromHistory(effSetNumber, effCurrentSide, effCurrentSide != null);
-  const prefillWeightKg =
-    histSet?.weight ??
-    mesoSet?.targetWeightMin ?? mesoSet?.targetWeightMax ??
-    enriched.programExercise?.targetWeightMin ?? enriched.programExercise?.targetWeightMax ?? null;
-  const prefillReps =
-    histSet?.reps ??
-    mesoSet?.targetRepsMin ?? mesoSet?.targetRepsMax ??
-    enriched.programExercise?.targetRepsMin ?? enriched.programExercise?.targetRepsMax ?? null;
-  const prefillRir =
-    histSet?.rir ??
-    mesoSet?.targetRirMin ?? mesoSet?.targetRirMax ??
-    enriched.programExercise?.targetRirMin ?? enriched.programExercise?.targetRirMax ?? null;
+  // Série « à encoder » (terminée dans un superset, amélioration 01b) : elle n'a pas encore
+  // de perfs, on la préremplit comme une nouvelle série de même numéro/côté. L'enregistrer
+  // passe par handleSaveEdit (updateSetLog → la ligne cesse d'être « à encoder »).
+  const completing = isEditing && editingSetLog!.isPending;
+  const prefill = completing
+    ? computePrefill(enriched, history, editingSetLog!.setNumber ?? effSetNumber, (editingSetLog!.side as 'L' | 'R' | null) ?? null)
+    : computePrefill(enriched, history, effSetNumber, effCurrentSide);
+  const fromRow = isEditing && !completing;
 
   const modalKey = isEditing ? `edit-${editingSetLog!.id}` : `new-${effSetNumber}-${effCurrentSide ?? ''}`;
-  const modalPrefillWeightKg = isEditing ? editingSetLog!.weight : prefillWeightKg;
-  const modalPrefillReps = isEditing ? editingSetLog!.reps : prefillReps;
-  const modalPrefillRir = isEditing ? editingSetLog!.rir : prefillRir;
-  const modalPrefillPartialReps = isEditing ? editingSetLog!.partialReps : (histSet?.partialReps ?? null);
-  const modalPrefillPdc = isEditing ? (editingSetLog!.pdc ?? false) : (histSet?.pdc ?? false);
-  const modalPrefillNote = isEditing ? editingSetLog!.note : null;
+  const modalPrefillWeightKg = fromRow ? editingSetLog!.weight : prefill.weightKg;
+  const modalPrefillReps = fromRow ? editingSetLog!.reps : prefill.reps;
+  const modalPrefillRir = fromRow ? editingSetLog!.rir : prefill.rir;
+  const modalPrefillPartialReps = fromRow ? editingSetLog!.partialReps : prefill.partialReps;
+  const modalPrefillPdc = fromRow ? (editingSetLog!.pdc ?? false) : prefill.pdc;
+  const modalPrefillNote = fromRow ? editingSetLog!.note : null;
   const modalSetNumber = isEditing ? (editingSetLog!.setNumber ?? effSetNumber) : effSetNumber;
   const modalSide = isEditing ? (editingSetLog!.side as 'L' | 'R' | null) : effCurrentSide;
   // Nouvelle série : pendant un repos de cet exercice (modal fermé par « retour »), on réutilise
@@ -585,48 +472,7 @@ export default function ExerciceDetailLiveScreen() {
         </View>
 
         {/* ── Infos exercice (repliée par défaut, lecture seule) ── */}
-        <Pressable style={styles.infoToggle} onPress={() => setInfoExpanded((v) => !v)}>
-          <Text style={styles.infoToggleText}>Infos exercice {infoExpanded ? '▾' : '▸'}</Text>
-        </Pressable>
-        {infoExpanded && (
-          <View style={styles.section}>
-            <ExerciseImageCarousel
-              exerciseId={enriched.exercise.id}
-              customImageUris={enriched.exercise.customImageUris as string[] | null}
-            />
-            <View style={styles.tagsRow}>
-              {enriched.exercise.level && <Text style={styles.tag}>{enriched.exercise.level}</Text>}
-              {enriched.exercise.category && <Text style={styles.tag}>{enriched.exercise.category}</Text>}
-              {enriched.exercise.equipment && <Text style={styles.tag}>{enriched.exercise.equipment}</Text>}
-            </View>
-
-            {enriched.exercise.description ? (
-              <>
-                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Instructions</Text>
-                {enriched.exercise.description.split('\n\n').map((step, i) => (
-                  <View key={i} style={styles.step}>
-                    <Text style={styles.stepNumber}>{i + 1}</Text>
-                    <Text style={styles.stepText}>{step}</Text>
-                  </View>
-                ))}
-              </>
-            ) : null}
-
-            {enriched.mesoExercise?.note ? (
-              <>
-                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Note de la séance planifiée</Text>
-                <Text style={styles.infoText}>{enriched.mesoExercise.note}</Text>
-              </>
-            ) : null}
-
-            {enriched.exercise.notes ? (
-              <>
-                <Text style={[styles.sectionTitle, styles.infoSubTitle]}>Note de l'exercice</Text>
-                <Text style={[styles.infoText, styles.catalogNoteText]}>{enriched.exercise.notes}</Text>
-              </>
-            ) : null}
-          </View>
-        )}
+        <ExerciseInfoPanel enriched={enriched} />
 
         {/* ── Remplacer l'exercice ── */}
         <View style={styles.section}>
@@ -655,6 +501,10 @@ export default function ExerciceDetailLiveScreen() {
             sets={progress.sets}
             plannedSetCount={plannedSetCount}
             previousSets={chain.previousSets}
+            onPressPending={(n) => {
+              const row = enriched.setLogs.find((l) => l.setNumber === n && l.isPending);
+              if (row) handleEditSetLog(row);
+            }}
           />
         </View>
 
@@ -832,6 +682,7 @@ export default function ExerciceDetailLiveScreen() {
               firstSide={firstSide}
               onEdit={handleEditSetLog}
               onDelete={handleDeleteSetLog}
+              onEncode={handleEditSetLog}
             />
           </View>
         )}
@@ -933,23 +784,6 @@ const styles = StyleSheet.create({
   },
   pickerTitle: { fontSize: 17, fontWeight: '600', color: '#1C1C1E' },
   pickerClose: { fontSize: 16, color: '#007AFF' },
-  infoToggle: { paddingHorizontal: 4, paddingVertical: 2 },
-  infoToggleText: { fontSize: 14, color: '#007AFF', fontWeight: '500' },
-  infoSubTitle: { marginTop: 12 },
-  infoText: { fontSize: 15, color: '#1C1C1E' },
-  step: { flexDirection: 'row', marginTop: 8, gap: 10, alignItems: 'flex-start' },
-  stepNumber: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: '#007AFF',
-    color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: '700',
-    lineHeight: 22, overflow: 'hidden',
-  },
-  stepText: { flex: 1, fontSize: 14, color: '#333', lineHeight: 20 },
-  catalogNoteText: { color: '#8E8E93' },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tag: {
-    fontSize: 12, color: '#555', backgroundColor: '#e8e8e8',
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-  },
   altRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   altChip: {
     backgroundColor: '#e8f0fe', borderRadius: 10,

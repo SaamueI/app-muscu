@@ -1,6 +1,6 @@
 # 01 — Superset : suivi en séance live
 
-> **Statut : ✅ décisions actées (2026-10-18)** — prêt à implémenter, en dernier du lot.
+> **Statut : ✅ implémenté (2026-10-19), à valider sur device** — voir § Notes d'implémentation en fin de document. Décisions actées le 2026-10-18.
 >
 > **Prérequis : plans 12, 13 et 14** (moteur d'avancement `computeProgress`, composants `ObjectivesList`/`SetLogList`, détection unilatérale, réglage du côté de départ). Le superset les réutilise tels quels.
 
@@ -160,3 +160,17 @@ Pas de migration (`exercise_logs.superset_group_id` existe déjà).
 - Résumé du bloc replié à jour après chaque changement de réglage.
 - Superset improvisé : toggle, 2 cartes cochées → encadrées en orange après coup.
 - Détails de séance après la fin : séries de A et B correctes.
+
+## Notes d'implémentation
+
+> **Implémenté le 2026-10-19 — typecheck 0 erreur, `npm run test:superset` vert, mais NON testé sur device** : la section « Vérification (device) » ci-dessus reste à dérouler à la main (le test du moteur ne couvre ni l'UI, ni le timer, ni les alertes).
+
+- **Moteur** `src/utils/supersetSequence.ts` (pur) + `scripts/testSupersetSequence.ts` (`npm run test:superset`, ~30 cas : 4 cas de latéralité × 2 modes de repos × repos entre côtés / ÷ 2, côté de départ G/D, nombre de séries différent, hors plan, reprise, mode changé entre deux manches, `startSetNumber`). `getNextStep` renvoie l'étape suivante **et** le repos qui la suit ; `restAfterStep` recalcule ce repos pour l'étape figée au « Commencer » (le « Terminer série » ne connaît que le store). `getObjectiveRows` donne les lignes entrelacées.
+  - *Manche* : la k-ième série d'un exercice tombe dans la manche k, sauf au-delà de ses séries prévues : elle passe alors après la dernière manche du plan des deux (A : 3 / B : 4 → manche 4 = B seul, manche 5 = A (hors plan) + B (hors plan)). Nombre de séries inconnu (programme à N variable) : alternance simple.
+  - *Repos* : une base de **0 s = pas de repos** (plan typique 0 s sur A) ; pas de base = repos en chrono libre ; en « 1 fois sur 2 », max des repos des participants de la manche (chacun déjà ÷ 2). Le ÷ 2 ne s'applique que si la série est unilatérale **et** que « Repos entre chaque côté » est activé (comme dans l'interface, où il n'est proposé qu'à cette condition).
+- **Extractions** (l'écran exercice passe de 1032 à ~870 lignes, rendu inchangé) : `src/utils/useExerciseLiveData.ts` (hook de chargement, un seul `setData` → jamais d'état à moitié chargé), `src/utils/setPrefill.ts` (objectifs de repos/exécution + `computePrefill`, paramètres explicites), `src/components/live/ExerciseInfoPanel.tsx`, et `ObjectivesList.tsx` exporte `getSetTargetText` + `ObjectiveRow`.
+- **Store** : `activeSuperset`, `unilateralByLog`, `supersetRestMode`, `restBetweenSidesByLog` (défaut activé) ; `halveRestByLog`/`restOverrideByLog`/`startSideByLog` réutilisés ; `moveActiveExerciseLog` déplace aussi les nouveaux champs. Les champs globaux `isUnilateral`/`currentSide`/`currentSetNumber` servent toujours de **photo de l'étape en cours** (figée au « Commencer »). Le toggle de l'écran exercice alimente aussi `unilateralByLog` : un choix déjà fait n'est jamais écrasé par la détection, dans un sens comme dans l'autre.
+- **Écrans** : `app/seance/superset.tsx` (route déclarée avec `SessionClock`), `src/components/live/SupersetSettings.tsx`, lancement + mode sélection « ⇄ Superset » dans `app/seance/[sessionId].tsx` (groupe de 3+ ou un exercice déjà fait → ouverture directe de l'exercice seul), `pairExerciseLogs` / `getSupersetHistory` dans `src/db/session.ts`, `GlobalRestBanner` (route superset si le chrono actif appartient au superset ; `excludeLogId` accepte un tableau), `SetPerformanceModal` (`exerciseName`).
+- **Sans repos** : le « Terminer série » repasse en `idle` (pas de décompte) et ouvre le modal ; à la validation, en mode Auto l'étape suivante démarre aussitôt, en Manuel le bouton « Commencer … » prend le relais. Le temps chronométré n'est repris que s'il correspond à l'étape (exercice + série + côté), sinon `executionSeconds = null`.
+- **Picker de repos** : pendant un repos il règle l'exercice qui vient d'être fait ; le décompte en cours prend la valeur choisie directement (÷ 2 si applicable), pas le max de fin de manche. Chip « Prévu » : retour à la règle normale du moteur.
+- **Pas fait / à surveiller** : pas de « Remplacer l'exercice » ni de changement de variante depuis l'écran superset (à faire depuis l'écran exercice seul ; un remplacement change l'id du log et le superset en cours garde l'ancien — le store suit via `moveActiveExerciseLog`, pas l'URL). Le superset improvisé ne vérifie pas qu'un des deux exercices appartient déjà à un autre groupe. L'historique fusionné refait deux requêtes `getPreviousPerfs` en plus de celles du hook (acceptable, 5 séances max).

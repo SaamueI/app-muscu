@@ -6,7 +6,8 @@ Plans d'implémentation issus de `Default/Améliorations app muscu.md` (backlog 
 
 | # | Sujet | Doc | Statut |
 |---|---|---|---|
-| 1 | Superset : suivi en séance live | [01](01-superset-live.md) | ✅ acté, à implémenter (en dernier) |
+| 1 | Superset : suivi en séance live | [01](01-superset-live.md) | ✅ implémenté (typecheck + `test:superset`), à valider sur device |
+| 1b | Superset : encodage différé des perfs (modal à onglets), « À suivre », repos réel | [01b](01b-superset-encodage-differe.md) | ✅ implémenté (typecheck + tests moteurs), à valider sur device |
 | 2 | Synchronisation du calendrier (système) | — | pas encore planifié |
 | 3 | Import/export des perfs + prompt LLM | — | pas encore planifié |
 | 4 | Création d'exercices complets à l'import d'un programme/méso | — | pas encore planifié |
@@ -27,7 +28,7 @@ Plans d'implémentation issus de `Default/Améliorations app muscu.md` (backlog 
 2. **11** — indépendant des autres (écran séance + widget), peut aussi passer en premier ou en parallèle.
 3. **13** *(fait)* — introduit le moteur d'avancement dérivé de la DB (`exerciseProgress.ts`) et extrait `ObjectivesList`/`SetLogList` de l'écran exercice. Unilatéral déduit de la variante + de l'historique ; migration `user_settings.first_side`.
 4. **14** *(fait)* — utilise `computeProgress` (`startSetNumber`) du plan 13. Migration `exercise_logs.selected_variation`.
-5. **01** — superset : réutilise le moteur et les composants de 13, et commence par extraire le reste de l'écran exercice. Le plus gros, à faire en dernier.
+5. **01** *(fait)* — superset : réutilise le moteur et les composants de 13, et commence par extraire le reste de l'écran exercice. Le plus gros, à faire en dernier.
 
 ## Ordre d'implémentation suivi — améliorations 06 à 10 (fait)
 
@@ -38,7 +39,7 @@ Plans d'implémentation issus de `Default/Améliorations app muscu.md` (backlog 
 
 ## Numéros de migration
 
-Lot 11-14 + 01 : **12** → `set_logs.note` ; **13** → `user_settings.first_side` ; **14** → `exercise_logs.selected_variation` (0019). Une instruction par migration. Numéros attribués à l'implémentation, à partir de 0017.
+Lot 11-14 + 01 : **12** → `set_logs.note` ; **13** → `user_settings.first_side` ; **14** → `exercise_logs.selected_variation` (0019) ; **01b** → `set_logs.is_pending` (0020). Une instruction par migration. Numéros attribués à l'implémentation, à partir de 0017.
 
 Trois points touchent la DB : **06** (`meso_exercises.note`, migration **0016**), **07** (`workout_sessions.moved_event_from_date`, migration **0013**) et **09** (3 colonnes sur `user_settings`, migrations **0014** + **0015**).
 

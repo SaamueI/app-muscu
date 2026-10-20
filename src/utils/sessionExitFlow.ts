@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 
 import { db } from '../db';
 import { exerciseLogs, setLogs, workoutSessions } from '../db/schema';
-import { cancelWorkoutSession, finishSession } from '../db/session';
+import { cancelWorkoutSession, countPendingSetLogs, finishSession } from '../db/session';
 
 // Flux de sortie d'une séance live, partagé entre l'écran séance (boutons
 // « Terminer » / « Annuler la séance ») et le widget « Séance en cours » (croix).
@@ -23,6 +23,32 @@ async function countSets(sessionId: string): Promise<number> {
 export async function finishSessionNow(sessionId: string, onDone?: () => void): Promise<void> {
   await finishSession(sessionId);
   onDone?.();
+}
+
+/**
+ * Termine la séance, avec un garde-fou si des séries terminées n'ont pas encore leurs
+ * perfs (superset, encodage différé — amélioration 01b) : Encoder maintenant / Garder
+ * sans perfs / Retour (3 boutons = limite Android). « Garder sans perfs » laisse les lignes
+ * marquées « à encoder » (complétables plus tard depuis Détails de la séance).
+ */
+export async function finishWithPendingCheck(
+  sessionId: string,
+  { onEncode, onDone }: { onEncode: () => void; onDone?: () => void }
+): Promise<void> {
+  const n = await countPendingSetLogs(sessionId);
+  if (n === 0) {
+    await finishSessionNow(sessionId, onDone);
+    return;
+  }
+  Alert.alert(
+    'Séries à encoder',
+    `${n} série${n > 1 ? 's' : ''} terminée${n > 1 ? 's' : ''} sans perfs encodées.`,
+    [
+      { text: 'Encoder maintenant', onPress: onEncode },
+      { text: 'Garder sans perfs', onPress: () => { finishSessionNow(sessionId, onDone); } },
+      { text: 'Retour', style: 'cancel' },
+    ]
+  );
 }
 
 /**
@@ -55,11 +81,18 @@ export async function promptCancelSession(sessionId: string, onDone?: () => void
   );
 }
 
-/** Alerte de la croix du widget : Annuler / Terminer / Retour (3 boutons = limite Android). */
-export function promptExitSession(sessionId: string): void {
+/**
+ * Alerte de la croix du widget : Annuler / Terminer / Retour (3 boutons = limite Android).
+ * `onEncodePending` : le widget n'a pas les séries en mémoire, il ouvre l'écran séance
+ * qui affiche le modal d'encodage.
+ */
+export function promptExitSession(sessionId: string, onEncodePending: () => void): void {
   Alert.alert('Séance en cours', undefined, [
     { text: 'Annuler la séance', style: 'destructive', onPress: () => { promptCancelSession(sessionId); } },
-    { text: 'Terminer la séance', onPress: () => { finishSessionNow(sessionId); } },
+    {
+      text: 'Terminer la séance',
+      onPress: () => { finishWithPendingCheck(sessionId, { onEncode: onEncodePending }); },
+    },
     { text: 'Retour', style: 'cancel' },
   ]);
 }

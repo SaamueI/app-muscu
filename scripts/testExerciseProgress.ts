@@ -137,6 +137,18 @@ assert(getEffectiveRest({ override: 180, target: 120, halve: true }) === 90, 'ov
 assert(getEffectiveRest({ override: null, target: null, halve: true }) === null, 'pas de repos → null même ÷ 2');
 assert(getEffectiveRest({ override: 45, target: null, halve: true }) === 23, '45 ÷ 2 arrondi');
 
+// Encodage différé (amélioration 01b) : une ligne « à encoder » compte comme faite
+{
+  const pend = (l: LoggedSet): LoggedSet => ({ ...l, isPending: true });
+  const p = computeProgress({ ...base, setLogs: [B(1), pend(B(2))] });
+  assert(statuses(p) === 'done,pending,current,todo', 'à encoder : série 2 orange, la 3 en cours');
+  assert(p.next.setNumber === 3, 'à encoder : ne repropose pas la série 2');
+  const u = computeProgress({ ...base, isUnilateral: true, setLogs: [pend(L(1))] });
+  assert(u.sets[0].status === 'current' && u.next.side === 'R', 'unilatéral, G à encoder : reste en cours, côté D');
+  const u2 = computeProgress({ ...base, isUnilateral: true, setLogs: [L(1), pend(R(1))] });
+  assert(u2.sets[0].status === 'pending', 'unilatéral, D à encoder : série complète orange');
+}
+
 // fixedPlannedSets
 assert(fixedPlannedSets(3, 3) === 3, '3–3 → 3 lignes');
 assert(fixedPlannedSets(3, 4) === 0, '3–4 → agrégé');

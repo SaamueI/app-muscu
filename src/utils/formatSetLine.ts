@@ -17,5 +17,9 @@ export function formatSetLine(sl: SetLogRow, unit: 'kg' | 'lb'): string {
   if (sl.rir != null) parts.push(`RIR ${sl.rir}`);
   if (sl.pdc) parts.push('PDC');
   if (sl.executionSeconds != null) parts.push(`${formatExecSeconds(sl.executionSeconds)} exec.`);
+  // Repos réel pris AVANT cette série (superset, amélioration 01b)
+  if (sl.restSeconds != null) parts.push(`repos ${formatExecSeconds(sl.restSeconds)}`);
+  // Série terminée mais perfs pas encore encodées : au minimum le temps d'exécution
+  if (sl.isPending) parts.push('à encoder');
   return parts.join(' · ') || '—';
 }
