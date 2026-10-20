@@ -377,6 +377,16 @@ npx expo run:android --variant release
 
 Nécessite Android Studio (SDK + `adb`) installé, `ANDROID_HOME` configuré, et un téléphone en USB avec débogage activé. APK généré dans `android/app/build/outputs/apk/release/app-release.apk`, à publier sur une [Release GitHub](https://github.com/SaamueI/app-muscu/releases/latest) (lien déjà dans le README).
 
+**Pièges de build (découverts en SDK 57) :**
+- **`android/` est gitignoré = généré** (Continuous Native Generation, depuis `app.json`). Après toute montée de SDK Expo / React Native, le régénérer **avant** de builder : `npx expo prebuild --clean --platform android`. Un vieux template donne des erreurs en cascade (`hermesc` introuvable sous `react-native/sdks/`, `Unresolved reference 'ReactNativeHostWrapper'` dans `MainApplication.kt`…) — ne pas les corriger une par une. Le `debug.keystore` régénéré est le keystore standard du template (même empreinte), donc la signature de l'APK ne change pas.
+- **Jamais de modification à la main dans `android/`** : même un `prebuild` sans `--clean` l'écrase. Tout passe par `app.json` ou un config plugin local (`plugins/`). L'icône custom (Shrek, `assets/images/shrek-icon.png`, 432 px récupéré de l'APK v1.0.2 — l'original avait été posé à la main dans `res/mipmap-*` et a été perdu au `prebuild --clean`) est déclarée dans `app.json` (`icon` + `android.adaptiveIcon.foregroundImage` + `image` du plugin `expo-splash-screen`, rendu identique à l'ancien splash avec l'`imageWidth` par défaut de 100 dp). `prebuild` peut décider de vider tout `android/` : arrêter avant les daemons Gradle d'un build précédent (sinon `EBUSY … unlink` et dossier à moitié supprimé — relancer `prebuild` après les avoir tués suffit).
+- **Architectures** : `plugins/withAndroidAbis.js` force `reactNativeArchitectures=armeabi-v7a,arm64-v8a` dans `android/gradle.properties` à chaque prebuild (x86/x86_64 retirés : émulateurs PC seulement, et ~moitié du temps de compilation C++).
+- **Pas d'espace dans le chemin du projet** (Windows) : la tâche `createBundleReleaseJsAndAssets` appelle `cmd` sans guillemets → `'C:\...\app' n'est pas reconnu`. D'où le dossier `app_muscu`.
+- **Après avoir déplacé/copié le projet**, supprimer les caches natifs (`android/.gradle`, `android/build`, `android/app/build`, `android/app/.cxx`, `node_modules/*/android/{build,.cxx}`) : ils contiennent l'ancien chemin en dur (ex. `Task 'mergeDebugNativeLibs' not found in project ':react-native-worklets'`).
+- Un build à froid est long (C++ de reanimated/worklets/screens par architecture) ; les suivants réutilisent les caches.
+- `fatal error: cannot open file '…/ndk/…/ostream': unspecified system_category error` = verrou momentané de Windows Defender sur un en-tête du NDK, pas une vraie erreur : relancer (le build reprend où il s'est arrêté).
+- Après `BUILD SUCCESSFUL`, `expo run:android` installe et ouvre l'APK puis **reste lancé** (Metro, pour afficher les logs). Inutile en release (le JS est dans l'APK) : `Ctrl+C` une fois l'app ouverte.
+
 ### Checklist de release (amélioration 09 — vérification de mise à jour)
 
 L'app compare `expo.version` (`app.json`) au `tag_name` de la dernière Release GitHub (`src/utils/updateCheck.ts`) pour détecter une mise à jour disponible. Cette détection **ne fonctionne que si le tag de la release est identique à `app.json`** — donc à chaque release :
