@@ -47,6 +47,7 @@ app/
     [sessionId].tsx    # Séance live : liste À faire / Faits, toggle isDone
     exercice/
       [logId].tsx      # Écran exercice : objectifs, timer, sets, historique
+    superset.tsx       # Écran superset : A/B enchaînés, un seul chrono (amélioration 01)
     presets-repos.tsx  # CRUD rest_presets (modal)
 
 src/
@@ -63,7 +64,8 @@ src/
     ExercisePicker.tsx
     TimerDisplay.tsx        # Composant timer (chrono / compte à rebours)
     RestPresetPicker.tsx    # Chips preset temps de repos
-    SetPerformanceModal.tsx # Modal saisie performance (poids, reps, RIR…)
+    SetPerformanceModal.tsx # Modal saisie performance (coquille `PerformanceSheet` + SetPerformanceForm)
+    SetPerformanceForm.tsx  # Formulaire de saisie d'une série, sans modal (amélioration 01b)
     DatePickerField.tsx     # Bouton → picker natif OS (date) ; props: value: Date|null, onChange
     WeekPickerField.tsx     # Calendrier inline react-native-calendars, sélection à la semaine ; props: value: string (ISO "YYYY-Www"), onChange
     GlobalRestBanner.tsx    # Bandeau repos en cours (phase 11) ; prop excludeLogId
@@ -71,6 +73,9 @@ src/
     live/ObjectivesList.tsx # Objectifs + avancement vert/bleu (amélioration 13, réutilisé par le superset)
     live/SetLogList.tsx     # Séries enregistrées G/D (côté de départ en premier) ; sans callbacks = lecture seule
     live/VariationPickerModal.tsx # Sélecteur de variante de la séance + « nouvelle variante » (amélioration 14)
+    live/ExerciseInfoPanel.tsx    # Bloc « Infos exercice » replié (écran exercice + superset)
+    live/SupersetSettings.tsx     # Bloc « Réglages du superset » (repos, unilatéral, encoder à la pause) — amélioration 01/01b
+    live/PendingSetsModal.tsx     # Modal à onglets des séries « à encoder » (amélioration 01b)
     SessionClock.tsx        # Chrono global de séance pour les headers natifs (amélioration 11)
     ImportScreen.tsx        # Écran d'import générique réutilisé par méso/programme (phase 12)
   utils/
@@ -80,6 +85,9 @@ src/
     activeSessionStore.ts  # Store éphémère timer en cours de séance (+ sessionStartedAt)
     exerciseProgress.ts    # Moteur PUR d'avancement (computeProgress, isUnilateralHint, getEffectiveRest) — `npm run test:progress`
     exerciseSwap.ts        # PUR : variante effective + chaîne de remplacements d'exercice (amélioration 14) — `npm run test:swap`
+    supersetSequence.ts    # Moteur PUR de séquence d'un superset (getNextStep, restAfterStep, getObjectiveRows) — `npm run test:superset`
+    setPrefill.ts          # Objectifs de repos/exécution d'une série + préremplissage du modal (paramètres explicites)
+    useExerciseLiveData.ts # Hook de chargement d'UN exercice live (écran exercice ×1, superset ×2)
     sessionExitFlow.ts     # promptCancelSession / finishSessionNow / promptExitSession (écran séance + widget)
     useSessionTimer.ts     # Hooks useActiveSessionTick (tick 1s, phase 11) + useReloadOnSessionEnded (recharge un écran quand une séance finit/est annulée)
     weightUtils.ts         # kgToLb, lbToKg, formatWeight
@@ -124,7 +132,7 @@ Drizzle n'applique une migration que si `migration.folderMillis > lastApplied.cr
 
 **Piège découvert avec la migration 0014 (plusieurs `ALTER TABLE` dans un même fichier) :** le migrateur Expo/Drizzle (`node_modules/drizzle-orm/expo-sqlite/migrator.js`) ne découpe un fichier `.sql` en instructions séparées que sur le marqueur littéral `--> statement-breakpoint`. Sans ce marqueur, tout le fichier est envoyé en un seul bloc à `NativeDatabase.prepareSync`, qui ne compile et n'exécute **que la toute première instruction** — les suivantes sont silencieusement ignorées, sans erreur, et la migration est quand même marquée comme appliquée. Toujours séparer chaque instruction SQL par une ligne `--> statement-breakpoint` dès qu'un fichier de migration en contient plus d'une (voir `0010_workout_session_live.sql` ou `0011_meso_calendar_anchor.sql` pour l'exemple). Un fichier à une seule instruction n'en a pas besoin.
 
-**Prochain `when` disponible** : > `1782700009000` (dernière migration : 0019).
+**Prochain `when` disponible** : > `1782700010000` (dernière migration : 0020).
 
 **Diagramme ER** : [docs/schema-diagramme.md](docs/schema-diagramme.md) (Mermaid, en code — pas besoin de le compiler). **Toute session qui modifie le schéma** (nouvelle colonne, nouvelle table, migration) doit le régénérer avant de terminer, à partir de `src/db/schema.ts` — comparer champ par champ avec la version existante plutôt que de tout réécrire à l'aveugle.
 
@@ -183,6 +191,7 @@ user_settings          — singleton ; weightUnit = 'kg'|'lb'
 | 0017 | set_log_note | `set_logs.note` (amélioration 12 : note par série) |
 | 0018 | user_first_side | `user_settings.first_side` (amélioration 13 : côté de départ unilatéral, `'L'` par défaut) |
 | 0019 | exercise_log_variation | `exercise_logs.selected_variation` (amélioration 14 : variante réellement faite ; `''` = aucune explicite) |
+| 0020 | set_log_pending | `set_logs.is_pending` (amélioration 01b : série terminée, perfs à encoder) |
 
 ---
 
@@ -198,6 +207,8 @@ Le store (`src/utils/activeSessionStore.ts`) est module-level (pas de Context). 
 - `isUnilateral`, `currentSide` (`'L'|'R'|null`), `currentSetNumber`
 
 `useKeepAwake()` activé sur l'écran session.
+
+**Démarrage auto en fin de repos = minuteur GLOBAL** (`useAutoStartTicker`, monté une fois dans `app/_layout.tsx` → `tickAutoStart` du store). Un minuteur d'écran meurt quand on quitte l'écran : la série ne démarrait pas si on n'était pas sur l'écran exercice/superset. Les écrans ne font que **publier** la prochaine série (`autoNext`) — uniquement l'écran qui possède le chrono, et seulement quand la série terminée est enregistrée (sinon `null` : rien à démarrer, le chrono passe en négatif). `useSuspendAutoStart(modalOuvert)` suspend le démarrage pendant une saisie. `leaveSuperset` / `markExerciseDone` effacent un `autoNext` devenu caduc. Ne jamais réintroduire de démarrage auto dans un `setInterval` d'écran (double déclenchement).
 
 ---
 
@@ -248,6 +259,18 @@ Détails complets : [docs/phase-11-seance-live-ameliorations.md](docs/phase-11-s
 Le plan (méso/programme) n'est jamais modifié : tout est porté par `exercise_logs`. `swapExerciseLog` (`src/db/session.ts`) change l'exercice du log s'il n'a aucune série ; sinon le log d'origine passe « fait » et un **nouveau log** (même ligne de plan, `order + 1`) prend le relais. La « chaîne » des remplacements est **déduite** (logs de la séance avec la même ligne de plan et un `order` inférieur, `src/utils/exerciseSwap.ts`) : elle donne `startSetNumber` (les séries de l'alternative reprennent à N+1, passé à `computeProgress`) et les séries des exercices remplacés (affichées en lecture seule). La variante réellement faite est `exercise_logs.selected_variation` (`''` = « Aucune » explicite, `null` = log antérieur à la migration → repli sur le plan) ; toujours la lire via `getEffectiveVariation`. `getSessionLive` expose `plannedExercise` (mention « remplace … »). `moveActiveExerciseLog` fait suivre le chrono actif et ses réglages éphémères au nouveau log. Tests : `npm run test:swap`.
 
 Détails complets : [docs/ameliorations/14-exercice-live-alternative.md](docs/ameliorations/14-exercice-live-alternative.md) (§ Notes d'implémentation).
+
+---
+
+## Séance live : superset (amélioration 01)
+
+Écran `app/seance/superset.tsx` (`?a=<logId>&b=<logId>`, A = exercice qui commence chaque manche) lancé depuis l'écran séance : tap sur un superset prévu (exactement 2 exercices à faire) ou mode « ⇄ Superset » (improvisé, mémorisé via `pairExerciseLogs` → `supersetGroupId`). La séquence A/B, les côtés G/D et les repos sont **dérivés des set_logs** par `src/utils/supersetSequence.ts` (aucun compteur d'étape tenu à la main) : quitter l'écran et revenir reprend à la bonne étape. Réglages éphémères dans le store (`supersetRestMode`, `unilateralByLog`, `restBetweenSidesByLog`, `halveRestByLog`) ; `activeExerciseLogId` = log de l'étape courante, `activeSuperset` = la paire (`GlobalRestBanner` route vers l'écran superset). Tests : `npm run test:superset`.
+
+Détails complets : [docs/ameliorations/01-superset-live.md](docs/ameliorations/01-superset-live.md) (§ Notes d'implémentation).
+
+**Évolution 01b (implémentée, à valider sur device)** : dans le superset, « Terminer série » crée **tout de suite** la ligne `set_logs` (`createPendingSetLog`, `is_pending = true`, temps d'exécution + repos réel) — le moteur la compte comme faite. Toggle « Encoder les perfs à la pause » (store `deferEncodingInSuperset`, activé par défaut) : sans repos après l'étape, pas de modal ; au repos suivant, `PendingSetsModal` (un onglet par série en attente, formulaires tous montés) complète les lignes (`completeSetLog`, qui ne touche jamais aux temps). `updateSetLog` remet aussi `is_pending` à false (toute édition = encodage). Séries en attente en orange (`SetState.status = 'pending'`), jamais utilisées pour le préremplissage. Garde-fous « Encoder maintenant / Garder sans perfs / Retour » à « Terminer le superset » et à la fin de séance (`finishWithPendingCheck`, widget → écran séance `?encodePending=1`). « À suivre » au-dessus de « Terminer série » (`peekStepAfter`). Superset « en cours » dès l'ouverture de son écran (`enterSuperset`/`leaveSuperset`, ce dernier aussi appelé par `markExerciseDone`) : l'écran séance y renvoie directement (groupe « SUPERSET EN COURS ») et `GlobalRestBanner` l'affiche hors repos aussi. `set_logs.rest_seconds` = repos réel **avant** la série (store `lastStepEndedAt` → `restBeforeSeconds` au « Commencer »). Détails : [docs/ameliorations/01b-superset-encodage-differe.md](docs/ameliorations/01b-superset-encodage-differe.md).
+
+**À faire ensuite — repos réel hors superset** : la mesure de `set_logs.rest_seconds` n'est faite (01b) que dans l'écran superset. Il faudra l'étendre à l'écran exercice simple (`app/seance/exercice/[logId].tsx`) — même principe : horodatage au « Terminer », calcul au « Commencer » suivant, écrit sur la ligne de la série, jamais écrasé par le modal de saisie.
 
 ---
 
@@ -304,6 +327,7 @@ mmssToSeconds(str)    // "1:30" ou "90" → 90, "" → null
 | 11bis | Amélioration 11 : chrono global de séance (écran séance, écran exercice, widget), flèche = interrompre, croix du widget = Annuler/Terminer/Retour, ré-hydratation après kill de l'app | ✅ |
 | 12 | Import : écrans dédiés, prompt LLM copiable (+ catalogue existant), import CSV, templates, anti-doublons d'exercices (prompt enrichi + réconciliation post-import) | ✅ |
 | 12bis | Améliorations 12-14 (séance live) : saisie des séries, avancement/unilatéral/repos, remplacement d'exercice + variante effective | ✅ |
+| 12ter | Amélioration 01 (séance live) : superset — écran dédié, séquence A/B, repos et unilatéral réglables (typecheck + tests moteur OK, **à valider sur device**) | ✅ |
 
 ## Phases restantes
 

@@ -16,7 +16,7 @@ import {
   workoutSessions,
 } from './schema';
 import { generateId } from '../utils/generateId';
-import { getActiveSession, notifySessionEnded, resetActiveSession, setActiveSession } from '../utils/activeSessionStore';
+import { getActiveSession, leaveSuperset, notifySessionEnded, resetActiveSession, setActiveSession } from '../utils/activeSessionStore';
 
 // ─── Types exportés ───────────────────────────────────────────────────────────
 
@@ -341,6 +341,7 @@ export async function saveSetLog(
 
 // ─── Édition / suppression d'une série ───────────────────────────────────────
 
+// Toute édition par le modal vaut encodage : une série « à encoder » cesse de l'être.
 export async function updateSetLog(id: string, data: SetLogData): Promise<void> {
   await db.update(setLogs).set({
     weight: data.weight,
@@ -352,7 +353,55 @@ export async function updateSetLog(id: string, data: SetLogData): Promise<void> 
     restSeconds: data.restSeconds,
     executionSeconds: data.executionSeconds,
     note: data.note,
+    isPending: false,
   }).where(eq(setLogs.id, id));
+}
+
+// ─── Encodage différé (superset, amélioration 01b) ───────────────────────────
+// « Terminer série » crée tout de suite la ligne : le moteur de séquence (dérivé des
+// set_logs) la compte comme faite, et rien n'est perdu si l'app est tuée. Les perfs
+// sont complétées plus tard par completeSetLog.
+
+export async function createPendingSetLog(
+  exerciseLogId: string,
+  setNumber: number,
+  side: 'L' | 'R' | null,
+  executionSeconds: number | null,
+  restSeconds: number | null
+): Promise<string> {
+  const id = generateId();
+  await db.insert(setLogs).values({
+    id,
+    exerciseLogId,
+    executionSeconds,
+    restSeconds,
+    setNumber,
+    side,
+    isPending: true,
+  });
+  return id;
+}
+
+// Écrit les perfs saisies sans toucher aux temps mesurés (le modal ne les connaît pas).
+export async function completeSetLog(id: string, data: SetLogData): Promise<void> {
+  await db.update(setLogs).set({
+    weight: data.weight,
+    reps: data.reps,
+    rir: data.rir,
+    partialReps: data.partialReps,
+    pdc: data.pdc,
+    note: data.note,
+    isPending: false,
+  }).where(eq(setLogs.id, id));
+}
+
+export async function countPendingSetLogs(workoutSessionId: string): Promise<number> {
+  const rows = await db
+    .select({ id: setLogs.id })
+    .from(setLogs)
+    .innerJoin(exerciseLogs, eq(setLogs.exerciseLogId, exerciseLogs.id))
+    .where(and(eq(exerciseLogs.workoutSessionId, workoutSessionId), eq(setLogs.isPending, true)));
+  return rows.length;
 }
 
 export async function deleteSetLog(id: string): Promise<void> {
@@ -407,6 +456,12 @@ export async function swapSetNumbers(
 
 export async function markExerciseDone(logId: string, isDone: boolean): Promise<void> {
   await db.update(exerciseLogs).set({ isDone }).where(eq(exerciseLogs.id, logId));
+  // Un exercice du superset en cours marqué fait (carte de l'écran séance, écran exercice…)
+  // termine ce superset : plus de bandeau « en cours » ni de renvoi vers son écran.
+  const sup = getActiveSession().activeSuperset;
+  if (isDone && sup && (sup.a === logId || sup.b === logId)) leaveSuperset();
+  // Exercice terminé pendant son repos : le minuteur global ne doit plus lancer sa série suivante
+  if (isDone && getActiveSession().autoNext?.logId === logId) setActiveSession({ autoNext: null });
 }
 
 // ─── Terminer la séance ───────────────────────────────────────────────────────
@@ -631,6 +686,52 @@ export async function getPreviousPerfs(
     sets: groups[sid] ?? [],
     variation: variations[sid] ?? null,
   }));
+}
+
+// Historique d'un superset : les dernières séances où A **ou** B a été fait, fusionnées par
+// séance et triées par date décroissante (dans une même séance, A puis B).
+export type SupersetPerfGroup = {
+  sessionId: string;
+  sessionDate: string;
+  a: PerfGroup | null;
+  b: PerfGroup | null;
+};
+
+export async function getSupersetHistory(
+  exerciseIdA: string,
+  exerciseIdB: string,
+  limit = 5,
+  excludeSessionId?: string
+): Promise<SupersetPerfGroup[]> {
+  const [histA, histB] = await Promise.all([
+    getPreviousPerfs(exerciseIdA, limit, excludeSessionId),
+    getPreviousPerfs(exerciseIdB, limit, excludeSessionId),
+  ]);
+  const bySession = new Map<string, SupersetPerfGroup>();
+  for (const g of histA) {
+    bySession.set(g.sessionId, { sessionId: g.sessionId, sessionDate: g.sessionDate, a: g, b: null });
+  }
+  for (const g of histB) {
+    const existing = bySession.get(g.sessionId);
+    if (existing) existing.b = g;
+    else bySession.set(g.sessionId, { sessionId: g.sessionId, sessionDate: g.sessionDate, a: null, b: g });
+  }
+  return [...bySession.values()]
+    .sort((x, y) => y.sessionDate.localeCompare(x.sessionDate))
+    .slice(0, limit);
+}
+
+// ─── Superset improvisé ───────────────────────────────────────────────────────
+// Associe deux exercices de la séance en cours : ils partagent un nouveau supersetGroupId
+// et s'encadrent en orange comme un superset prévu. Le plan (méso/programme) n'est pas
+// modifié : seul l'historique de cette séance garde la trace.
+
+export async function pairExerciseLogs(logIdA: string, logIdB: string): Promise<void> {
+  const groupId = generateId();
+  await db
+    .update(exerciseLogs)
+    .set({ supersetGroupId: groupId })
+    .where(inArray(exerciseLogs.id, [logIdA, logIdB]));
 }
 
 // ─── Vérifier si une séance est déjà en cours pour un événement ──────────────

@@ -75,7 +75,14 @@ export default function ActiveSessionBanner() {
           />
         )}
       </Pressable>
-      <Pressable hitSlop={8} onPress={() => promptExitSession(s.sessionId!)}>
+      <Pressable
+        hitSlop={8}
+        onPress={() =>
+          promptExitSession(s.sessionId!, () =>
+            router.push(`/seance/${s.sessionId}?encodePending=1` as any)
+          )
+        }
+      >
         <Text style={styles.close}>✕</Text>
       </Pressable>
     </Animated.View>

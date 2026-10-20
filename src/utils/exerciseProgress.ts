@@ -6,12 +6,15 @@
 
 export type Side = 'L' | 'R';
 
-export type LoggedSet = { setNumber: number | null; side: Side | string | null };
+// isPending : ligne créée au « Terminer série » mais perfs pas encore encodées (amélioration 01b).
+// Elle compte comme faite pour l'avancement ; seul l'affichage la distingue.
+export type LoggedSet = { setNumber: number | null; side: Side | string | null; isPending?: boolean | null };
 
 export type SetState = {
   setNumber: number;
-  // done = série complète ; current = prochaine série à faire ; todo = le reste
-  status: 'done' | 'current' | 'todo';
+  // done = série complète ; pending = complète mais au moins une ligne à encoder ;
+  // current = prochaine série à faire ; todo = le reste
+  status: 'done' | 'pending' | 'current' | 'todo';
   // Côtés déjà enregistrés (unilatéral à moitié fait : un seul élément)
   sidesDone: Side[];
 };
@@ -32,7 +35,7 @@ type ComputeInput = {
   startSetNumber?: number;
 };
 
-type Group = { hasNone: boolean; hasL: boolean; hasR: boolean };
+type Group = { hasNone: boolean; hasL: boolean; hasR: boolean; hasPending: boolean };
 
 export function computeProgress({
   setLogs,
@@ -44,7 +47,8 @@ export function computeProgress({
   const groups = new Map<number, Group>();
   for (const l of setLogs) {
     if (l.setNumber == null || l.setNumber < startSetNumber) continue;
-    const g = groups.get(l.setNumber) ?? { hasNone: false, hasL: false, hasR: false };
+    const g = groups.get(l.setNumber) ?? { hasNone: false, hasL: false, hasR: false, hasPending: false };
+    if (l.isPending) g.hasPending = true;
     if (l.side === 'L') g.hasL = true;
     else if (l.side === 'R') g.hasR = true;
     else g.hasNone = true;
@@ -80,7 +84,9 @@ export function computeProgress({
     if (g?.hasL) sidesDone.push('L');
     if (g?.hasR) sidesDone.push('R');
     const status: SetState['status'] =
-      g && isDone(g) ? 'done' : n === next.setNumber ? 'current' : 'todo';
+      g && isDone(g)
+        ? g.hasPending ? 'pending' : 'done'
+        : n === next.setNumber ? 'current' : 'todo';
     sets.push({ setNumber: n, status, sidesDone });
   }
 

@@ -167,6 +167,9 @@ export const setLogs = sqliteTable('set_logs', {
   side: text('side'),
   // Note libre saisie dans le modal de performance (une par ligne, donc une par côté en unilatéral)
   note: text('note'),
+  // Série terminée mais perfs pas encore encodées (superset, encodage différé — amélioration 01b).
+  // La ligne existe dès « Terminer série » avec son temps d'exécution ; l'encodage la complète.
+  isPending: integer('is_pending', { mode: 'boolean' }).notNull().default(false),
 });
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────

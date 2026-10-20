@@ -452,6 +452,8 @@ function formatSetLine(sl: SetLogRow, unit: 'kg' | 'lb'): string {
   if (sl.rir != null) parts.push(`RIR ${sl.rir}`);
   if (sl.pdc) parts.push('PDC');
   if (sl.durationSeconds != null) parts.push(`${sl.durationSeconds}s`);
+  // Série terminée en superset sans que ses perfs aient été encodées (amélioration 01b)
+  if (sl.isPending) parts.push('non encodée');
   return parts.join(' · ');
 }
 

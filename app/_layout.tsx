@@ -12,6 +12,7 @@ import { getUpdatePrefs, setUpdatePrefs } from '../src/db/settings';
 import { checkForUpdate } from '../src/utils/updateCheck';
 import { showUpdateAvailableAlert } from '../src/utils/updateAlert';
 import ActiveSessionBanner from '../src/components/ActiveSessionBanner';
+import { useAutoStartTicker } from '../src/utils/useSessionTimer';
 import SessionClock from '../src/components/SessionClock';
 import { restoreOpenSession } from '../src/db/session';
 
@@ -67,6 +68,8 @@ export default function RootLayout() {
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
+  // Démarrage auto des séries en fin de repos, quel que soit l'écran affiché
+  useAutoStartTicker();
 
   useEffect(() => {
     restoreOpenSession().catch(() => {});
@@ -128,6 +131,7 @@ function RootLayoutNav() {
         <Stack.Screen name="seance/details/[sessionId]" options={{ title: 'Détails de la séance' }} />
         <Stack.Screen name="seance/details/[sessionId]/modifier" options={{ title: 'Modifier la séance' }} />
         <Stack.Screen name="seance/exercice/[logId]" options={{ title: 'Exercice', headerRight: () => <SessionClock /> }} />
+        <Stack.Screen name="seance/superset" options={{ title: 'Superset', headerRight: () => <SessionClock /> }} />
         <Stack.Screen name="seance/presets-repos" options={{ title: 'Temps de repos', presentation: 'modal' }} />
       </Stack>
       <ActiveSessionBanner />

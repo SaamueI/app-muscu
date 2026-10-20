@@ -1,0 +1,1 @@
+ALTER TABLE `set_logs` ADD COLUMN `is_pending` integer DEFAULT false NOT NULL;

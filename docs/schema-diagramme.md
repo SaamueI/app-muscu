@@ -113,6 +113,7 @@ erDiagram
         int set_number
         text side
         text note
+        boolean is_pending
     }
 
     MESOCYCLES {
