@@ -2,7 +2,7 @@
   "expo": {
     "name": "muscu-app",
     "slug": "muscu-app",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/shrek-icon.png",
     "scheme": "muscuapp",
@@ -16,7 +16,7 @@
         "foregroundImage": "./assets/images/shrek-icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 3,
+      "versionCode": 4,
       "package": "com.samimole.muscuapp"
     },
     "web": {
